@@ -47,7 +47,7 @@ React Dashboard
 
 ### Frontend
 - React
-- Recharts (visualization)
+- Recharts 
 - Glassmorphism UI styling
 
 ---
@@ -203,17 +203,6 @@ Charts are generated dynamically from SQL query results.
 - Recharts
 - SQL
 - Glassmorphism UI design
-
----
-
-## Future Improvements
-
-Possible extensions:
-
-- add climate datasets (temperature / CO₂)
-- integrate satellite pollution measurements
-- allow user-defined SQL queries
-- deploy the dashboard online
 
 ---
 
