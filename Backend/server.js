@@ -1,6 +1,13 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+
+if (!process.env.MYSQL_PASSWORD) {
+  console.error('MYSQL_PASSWORD environment variable is required');
+  process.exit(1);
+}
 
 const app = express();
 const port = 3000;
@@ -8,11 +15,12 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
+// Use air_pollution database (from new.sql / load_air_pollution_db.py)
 const db = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'se',
-  database: 'climate_db',
+  host: process.env.MYSQL_HOST || 'localhost',
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE || 'air_pollution',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -37,28 +45,36 @@ function sendQueryResponse(res, err, results, queryName, description, sourceMap,
   });
 }
 
+// Map AQI country names to country.table_name for joins
+const COUNTRY_NAME_MAP = `
+  CASE a.country
+    WHEN 'United States of America' THEN 'United States'
+    WHEN 'Iran (Islamic Republic of)' THEN 'Iran, Islamic Rep.'
+    WHEN 'Bolivia (Plurinational State of)' THEN 'Bolivia'
+    WHEN 'Venezuela (Bolivarian Republic of)' THEN 'Venezuela, RB'
+    WHEN 'Türkiye' THEN 'Turkiye'
+    ELSE a.country
+  END
+`;
+
 // ----------------------------------------
 // Source legend for frontend coloring
 // ----------------------------------------
 app.get('/api/source-legend', (req, res) => {
   res.json({
-    countries_metadata: {
+    country: {
       label: 'Country Metadata',
       color: '#7FB6E8'
     },
-    wb_air_pollution_mortality: {
-      label: 'World Bank Mortality',
+    health_impacts: {
+      label: 'Health Impacts (Mortality & DALYs)',
       color: '#F28C8C'
-    },
-    who_air_quality: {
-      label: 'WHO Air Quality',
-      color: '#8FD19E'
     },
     city_aqi: {
       label: 'City AQI',
       color: '#B79AE8'
     },
-    oecd_health_burden: {
+    oecd_normalized: {
       label: 'OECD Health Burden',
       color: '#F6B37A'
     }
@@ -72,297 +88,249 @@ app.get('/api/query-catalog', (req, res) => {
   res.json([
     {
       id: 'top-pollution-mortality',
-      title: 'High Pollution, High Mortality, and Income Context',
+      title: 'High Mortality with AQI and Income Context',
       endpoint: '/api/top-pollution-mortality',
-      description: 'Countries where PM2.5 exposure and mortality are high, with regional and income-group context.',
-      tables: ['wb_air_pollution_mortality', 'who_air_quality', 'countries_metadata'],
-      insight: 'This query shows which countries face the heaviest combined environmental and health burden. It reveals whether high pollution and high mortality are concentrated in specific regions or lower-income settings.'
+      description: 'Countries where mortality is high, with city AQI and regional/income context.',
+      tables: ['health_impacts', 'city_aqi', 'country'],
+      insight: 'Shows which countries face the heaviest health burden from air pollution, with local AQI data and economic context.'
     },
     {
-      id: 'aqi-pm25-crosscheck',
-      title: 'AQI and WHO Cross-Validation by Region',
-      endpoint: '/api/aqi-pm25-crosscheck',
-      description: 'Cities where AQI and WHO pollution measures both indicate severe pollution, with regional context.',
-      tables: ['city_aqi', 'who_air_quality', 'countries_metadata'],
-      insight: 'This query validates severe pollution hotspots using two independent air-quality sources. If both AQI and WHO PM2.5 data are high, the city is more likely to be a true pollution hotspot rather than a measurement anomaly.'
+      id: 'aqi-high-pollution-cities',
+      title: 'Cities with High AQI by Region',
+      endpoint: '/api/aqi-high-pollution-cities',
+      description: 'Cities where AQI indicates severe pollution, with regional context.',
+      tables: ['city_aqi', 'country'],
+      insight: 'Identifies pollution hotspots using AQI data. Cities with high PM2.5 AQI are likely true pollution hotspots.'
     },
     {
       id: 'mortality-by-income',
-      title: 'Mortality and PM2.5 by Income Group',
+      title: 'Mortality by Income Group',
       endpoint: '/api/mortality-by-income',
-      description: 'Compares country income groups on both mortality burden and PM2.5 exposure.',
-      tables: ['wb_air_pollution_mortality', 'countries_metadata', 'who_air_quality'],
-      insight: 'This query reveals environmental inequality. It compares pollution exposure and air-pollution mortality across economic groups, showing whether lower-income countries suffer disproportionately higher health impacts.'
+      description: 'Compares country income groups on air-pollution mortality burden.',
+      tables: ['health_impacts', 'country'],
+      insight: 'Reveals environmental inequality—whether lower-income countries suffer disproportionately higher mortality from air pollution.'
     },
     {
       id: 'high-mortality-health-burden',
-      title: 'High Mortality and Health Burden',
+      title: 'High Mortality and OECD Health Burden',
       endpoint: '/api/high-mortality-health-burden',
-      description: 'Countries with high air-pollution mortality and high OECD health burden values.',
-      tables: ['wb_air_pollution_mortality', 'oecd_health_burden', 'countries_metadata'],
-      insight: 'This query connects pollution mortality with broader health burden. It highlights countries where air pollution is not only associated with deaths, but also with wider public-health strain.'
+      description: 'Countries with high mortality and high OECD DALY health burden.',
+      tables: ['health_impacts', 'country'],
+      insight: 'Connects pollution mortality with broader health burden. Highlights countries where air pollution drives both deaths and wider public-health strain.'
     },
     {
       id: 'cities-in-high-mortality-countries',
       title: 'Cities in High-Mortality Countries',
       endpoint: '/api/cities-in-high-mortality-countries',
-      description: 'Cities with high local PM2.5 in countries with high national air-pollution mortality.',
-      tables: ['who_air_quality', 'wb_air_pollution_mortality', 'countries_metadata'],
-      insight: 'This query identifies local city-level hotspots inside countries that already have high national mortality. It helps show where targeted local interventions may be most needed.'
+      description: 'Cities with high local AQI in countries with high national mortality.',
+      tables: ['city_aqi', 'health_impacts', 'country'],
+      insight: 'Identifies local city-level hotspots inside countries with high national mortality—where targeted interventions may be most needed.'
     }
   ]);
 });
+
 // ----------------------------------------
-// 1) High pollution + high mortality + income context
-// Tables:
-// wb_air_pollution_mortality + who_air_quality + countries_metadata
+// 1) High mortality + AQI + income context
+// Tables: health_impacts + city_aqi + country
 // ----------------------------------------
 app.get('/api/top-pollution-mortality', (req, res) => {
   const sql = `
     SELECT 
-      w.country_name,
-      m.region,
-      m.income_group,
-      ROUND(AVG(a.pm25_concentration), 2) AS avg_pm25,
-      ROUND(AVG(w.mortality_rate_per_100k), 2) AS avg_mortality
-    FROM wb_air_pollution_mortality w
-    JOIN countries_metadata m
-      ON w.country_code = m.country_code
-    JOIN who_air_quality a
-      ON a.iso3 = w.country_code
-    WHERE w.year >= 2015
-      AND a.pm25_concentration IS NOT NULL
-      AND m.income_group IS NOT NULL
-      AND w.mortality_rate_per_100k IS NOT NULL
-    GROUP BY w.country_name, m.region, m.income_group
-    HAVING AVG(a.pm25_concentration) > 20
+      c.table_name AS country_name,
+      c.region,
+      c.income_group,
+      ROUND(AVG(a.pm25_aqi_value), 2) AS avg_pm25_aqi,
+      ROUND(AVG(h.impact_value), 2) AS avg_mortality
+    FROM health_impacts h
+    JOIN country c ON h.country_code = c.country_code
+    LEFT JOIN city_aqi a ON ${COUNTRY_NAME_MAP} = c.table_name
+    WHERE h.indicator_code = 'SH.STA.AIRP.P5'
+      AND h.year >= 2015
+      AND c.income_group IS NOT NULL
+      AND c.income_group != ''
+    GROUP BY c.table_name, c.region, c.income_group
+    HAVING AVG(h.impact_value) > 50
     ORDER BY avg_mortality DESC
     LIMIT 15
   `;
 
   const sourceMap = {
-    country_name: 'wb_air_pollution_mortality',
-    region: 'countries_metadata',
-    income_group: 'countries_metadata',
-    avg_pm25: 'who_air_quality',
-    avg_mortality: 'wb_air_pollution_mortality'
+    country_name: 'country',
+    region: 'country',
+    income_group: 'country',
+    avg_pm25_aqi: 'city_aqi',
+    avg_mortality: 'health_impacts'
   };
-
-  const tablesUsed = [
-    'wb_air_pollution_mortality',
-    'who_air_quality',
-    'countries_metadata'
-  ];
 
   db.query(sql, (err, results) => {
     sendQueryResponse(
       res,
       err,
       results,
-      'High Pollution, High Mortality, and Income Context',
-      'Countries where PM2.5 exposure and mortality are high, with regional and income-group context.',
+      'High Mortality with AQI and Income Context',
+      'Countries where mortality is high, with city AQI and regional/income context.',
       sourceMap,
-      tablesUsed
+      ['health_impacts', 'city_aqi', 'country']
     );
   });
 });
 
 // ----------------------------------------
-// 2) AQI and WHO cross-validation with region context
-// Tables:
-// city_aqi + who_air_quality + countries_metadata
+// 2) Cities with high AQI by region
+// Tables: city_aqi + country
 // ----------------------------------------
-app.get('/api/aqi-pm25-crosscheck', (req, res) => {
+app.get('/api/aqi-high-pollution-cities', (req, res) => {
   const sql = `
     SELECT 
-      a.country_name,
-      a.city_name,
-      m.region,
+      a.country AS country_name,
+      a.city AS city_name,
+      c.region,
       ROUND(AVG(a.pm25_aqi_value), 2) AS avg_pm25_aqi,
-      ROUND(AVG(w.pm25_concentration), 2) AS avg_pm25_concentration,
-      ROUND(AVG(w.no2_concentration), 2) AS avg_no2_concentration
+      ROUND(AVG(a.aqi_value), 2) AS avg_aqi,
+      ROUND(AVG(a.no2_aqi_value), 2) AS avg_no2_aqi
     FROM city_aqi a
-    JOIN who_air_quality w
-      ON a.city_name = w.city_name
-     AND a.country_name = w.country_name
-    JOIN countries_metadata m
-      ON w.iso3 = m.country_code
+    LEFT JOIN country c ON ${COUNTRY_NAME_MAP} = c.table_name
     WHERE a.pm25_aqi_value IS NOT NULL
-      AND w.pm25_concentration IS NOT NULL
-    GROUP BY a.country_name, a.city_name, m.region
+    GROUP BY a.country, a.city, c.region
     HAVING AVG(a.pm25_aqi_value) > 100
-    ORDER BY avg_pm25_concentration DESC
+    ORDER BY avg_pm25_aqi DESC
     LIMIT 15
   `;
 
   const sourceMap = {
     country_name: 'city_aqi',
     city_name: 'city_aqi',
-    region: 'countries_metadata',
+    region: 'country',
     avg_pm25_aqi: 'city_aqi',
-    avg_pm25_concentration: 'who_air_quality',
-    avg_no2_concentration: 'who_air_quality'
+    avg_aqi: 'city_aqi',
+    avg_no2_aqi: 'city_aqi'
   };
-
-  const tablesUsed = [
-    'city_aqi',
-    'who_air_quality',
-    'countries_metadata'
-  ];
 
   db.query(sql, (err, results) => {
     sendQueryResponse(
       res,
       err,
       results,
-      'AQI and WHO Cross-Validation by Region',
-      'Cities where AQI and WHO pollutant concentration both indicate severe pollution, with regional context.',
+      'Cities with High AQI by Region',
+      'Cities where AQI indicates severe pollution, with regional context.',
       sourceMap,
-      tablesUsed
+      ['city_aqi', 'country']
     );
   });
 });
 
 // ----------------------------------------
-// 3) Mortality and PM2.5 by income group
-// Tables:
-// wb_air_pollution_mortality + countries_metadata + who_air_quality
+// 3) Mortality by income group
+// Tables: health_impacts + country + city_aqi (for PM2.5 AQI)
 // ----------------------------------------
 app.get('/api/mortality-by-income', (req, res) => {
   const sql = `
     SELECT 
-      m.income_group,
-      ROUND(AVG(w.mortality_rate_per_100k), 2) AS avg_mortality,
-      ROUND(AVG(a.pm25_concentration), 2) AS avg_pm25,
-      COUNT(DISTINCT w.country_code) AS countries_count
-    FROM wb_air_pollution_mortality w
-    JOIN countries_metadata m
-      ON w.country_code = m.country_code
-    JOIN who_air_quality a
-      ON a.iso3 = w.country_code
-    WHERE m.income_group IS NOT NULL
-      AND a.pm25_concentration IS NOT NULL
-      AND w.mortality_rate_per_100k IS NOT NULL
-    GROUP BY m.income_group
+      c.income_group,
+      ROUND(AVG(h.impact_value), 2) AS avg_mortality,
+      ROUND(AVG(a.pm25_aqi_value), 2) AS avg_pm25,
+      COUNT(DISTINCT h.country_code) AS countries_count
+    FROM health_impacts h
+    JOIN country c ON h.country_code = c.country_code
+    LEFT JOIN city_aqi a ON ${COUNTRY_NAME_MAP} = c.table_name
+    WHERE h.indicator_code = 'SH.STA.AIRP.P5'
+      AND c.income_group IS NOT NULL
+      AND c.income_group != ''
+    GROUP BY c.income_group
     ORDER BY avg_mortality DESC
   `;
 
   const sourceMap = {
-    income_group: 'countries_metadata',
-    avg_mortality: 'wb_air_pollution_mortality',
-    avg_pm25: 'who_air_quality',
-    countries_count: 'wb_air_pollution_mortality'
+    income_group: 'country',
+    avg_mortality: 'health_impacts',
+    avg_pm25: 'city_aqi',
+    countries_count: 'health_impacts'
   };
-
-  const tablesUsed = [
-    'wb_air_pollution_mortality',
-    'countries_metadata',
-    'who_air_quality'
-  ];
 
   db.query(sql, (err, results) => {
     sendQueryResponse(
       res,
       err,
       results,
-      'Mortality and PM2.5 by Income Group',
-      'Compares income groups on both mortality burden and PM2.5 exposure.',
+      'Mortality by Income Group',
+      'Compares income groups on air-pollution mortality burden.',
       sourceMap,
-      tablesUsed
+      ['health_impacts', 'country', 'city_aqi']
     );
   });
 });
 
 // ----------------------------------------
 // 4) High mortality and OECD health burden
-// Tables:
-// wb_air_pollution_mortality + oecd_health_burden + countries_metadata
+// Tables: health_impacts (both indicators) + country
 // ----------------------------------------
 app.get('/api/high-mortality-health-burden', (req, res) => {
   const sql = `
     SELECT
-      w.country_name,
-      m.region,
-      ROUND(AVG(w.mortality_rate_per_100k), 2) AS avg_mortality,
-      ROUND(AVG(o.obs_value), 2) AS avg_health_burden
-    FROM wb_air_pollution_mortality w
-    JOIN countries_metadata m
-      ON w.country_code = m.country_code
-    JOIN oecd_health_burden o
-      ON w.country_code = o.ref_area_code
-    WHERE w.mortality_rate_per_100k IS NOT NULL
-      AND o.obs_value IS NOT NULL
-    GROUP BY w.country_name, m.region
+      c.table_name AS country_name,
+      c.region,
+      ROUND(AVG(CASE WHEN h.indicator_code = 'SH.STA.AIRP.P5' THEN h.impact_value END), 2) AS avg_mortality,
+      ROUND(AVG(CASE WHEN h.indicator_code = 'DALY_PM25' THEN h.impact_value END), 2) AS avg_health_burden
+    FROM health_impacts h
+    JOIN country c ON h.country_code = c.country_code
+    WHERE h.indicator_code IN ('SH.STA.AIRP.P5', 'DALY_PM25')
+    GROUP BY c.table_name, c.region
+    HAVING AVG(CASE WHEN h.indicator_code = 'SH.STA.AIRP.P5' THEN h.impact_value END) IS NOT NULL
+       AND AVG(CASE WHEN h.indicator_code = 'DALY_PM25' THEN h.impact_value END) IS NOT NULL
     ORDER BY avg_mortality DESC, avg_health_burden DESC
     LIMIT 15
   `;
 
   const sourceMap = {
-    country_name: 'wb_air_pollution_mortality',
-    region: 'countries_metadata',
-    avg_mortality: 'wb_air_pollution_mortality',
-    avg_health_burden: 'oecd_health_burden'
+    country_name: 'country',
+    region: 'country',
+    avg_mortality: 'health_impacts',
+    avg_health_burden: 'health_impacts'
   };
-
-  const tablesUsed = [
-    'wb_air_pollution_mortality',
-    'oecd_health_burden',
-    'countries_metadata'
-  ];
 
   db.query(sql, (err, results) => {
     sendQueryResponse(
       res,
       err,
       results,
-      'High Mortality and Health Burden',
-      'Countries with high air-pollution mortality and high OECD health burden, with regional context.',
+      'High Mortality and OECD Health Burden',
+      'Countries with high mortality and high OECD DALY health burden.',
       sourceMap,
-      tablesUsed
+      ['health_impacts', 'country']
     );
   });
 });
 
 // ----------------------------------------
-// 5) Cities in countries with high national mortality
-// Tables:
-// who_air_quality + wb_air_pollution_mortality + countries_metadata
+// 5) Cities in high-mortality countries
+// Tables: city_aqi + health_impacts + country
 // ----------------------------------------
 app.get('/api/cities-in-high-mortality-countries', (req, res) => {
   const sql = `
     SELECT
-      a.country_name,
-      a.city_name,
-      m.region,
-      ROUND(AVG(a.pm25_concentration), 2) AS avg_pm25,
-      ROUND(AVG(w.mortality_rate_per_100k), 2) AS avg_mortality
-    FROM who_air_quality a
-    JOIN wb_air_pollution_mortality w
-      ON a.iso3 = w.country_code
-    JOIN countries_metadata m
-      ON w.country_code = m.country_code
-    WHERE a.pm25_concentration IS NOT NULL
-      AND w.mortality_rate_per_100k IS NOT NULL
-      AND w.year >= 2015
-    GROUP BY a.country_name, a.city_name, m.region
-    HAVING AVG(w.mortality_rate_per_100k) > 20
-    ORDER BY avg_pm25 DESC, avg_mortality DESC
+      a.country AS country_name,
+      a.city AS city_name,
+      c.region,
+      ROUND(AVG(a.pm25_aqi_value), 2) AS avg_pm25_aqi,
+      ROUND(AVG(h.impact_value), 2) AS avg_mortality
+    FROM city_aqi a
+    JOIN country c ON ${COUNTRY_NAME_MAP} = c.table_name
+    JOIN health_impacts h ON h.country_code = c.country_code AND h.indicator_code = 'SH.STA.AIRP.P5'
+    WHERE a.pm25_aqi_value IS NOT NULL
+      AND h.year >= 2015
+    GROUP BY a.country, a.city, c.region
+    HAVING AVG(h.impact_value) > 50
+    ORDER BY avg_pm25_aqi DESC, avg_mortality DESC
     LIMIT 15
   `;
 
   const sourceMap = {
-    country_name: 'who_air_quality',
-    city_name: 'who_air_quality',
-    region: 'countries_metadata',
-    avg_pm25: 'who_air_quality',
-    avg_mortality: 'wb_air_pollution_mortality'
+    country_name: 'city_aqi',
+    city_name: 'city_aqi',
+    region: 'country',
+    avg_pm25_aqi: 'city_aqi',
+    avg_mortality: 'health_impacts'
   };
-
-  const tablesUsed = [
-    'who_air_quality',
-    'wb_air_pollution_mortality',
-    'countries_metadata'
-  ];
 
   db.query(sql, (err, results) => {
     sendQueryResponse(
@@ -370,18 +338,18 @@ app.get('/api/cities-in-high-mortality-countries', (req, res) => {
       err,
       results,
       'Cities in High-Mortality Countries',
-      'Cities with high local PM2.5 located in countries with high national pollution mortality.',
+      'Cities with high local AQI in countries with high national mortality.',
       sourceMap,
-      tablesUsed
+      ['city_aqi', 'health_impacts', 'country']
     );
   });
 });
 
 // ----------------------------------------
-// Optional simple test endpoint
+// Test endpoint
 // ----------------------------------------
 app.get('/api/mortality', (req, res) => {
-  const sql = `SELECT * FROM wb_air_pollution_mortality LIMIT 10`;
+  const sql = `SELECT * FROM health_impacts WHERE indicator_code = 'SH.STA.AIRP.P5' LIMIT 10`;
 
   db.query(sql, (err, results) => {
     if (err) {
@@ -397,4 +365,5 @@ app.get('/api/mortality', (req, res) => {
 
 app.listen(port, () => {
   console.log(`Backend server running at http://localhost:${port}`);
+  console.log(`Using database: ${process.env.MYSQL_DATABASE || 'air_pollution'}`);
 });

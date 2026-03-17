@@ -70,13 +70,15 @@ These datasets were **cleaned and unified** using shared country codes.
 
 ## Database Design
 
-The database includes the following core tables:
+The database (`air_pollution`) includes the following core tables (BCNF normalized):
 
-- `countries_metadata`
-- `wb_air_pollution_mortality`
-- `who_air_quality`
-- `city_aqi`
-- `oecd_health_burden`
+- `country` – Country metadata (region, income group)
+- `indicator` – Indicator definitions
+- `health_impacts` – Unified mortality + OECD DALYs
+- `city_aqi` – City-level AQI data
+- `aqi_reference` – AQI category thresholds
+- `mortality_normalized` – World Bank mortality (long format)
+- `oecd_normalized` – OECD health burden
 
 The schema is designed in **BCNF** and supports multi-table joins for analytical queries.
 
