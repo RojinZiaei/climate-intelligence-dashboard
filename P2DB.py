@@ -1,28 +1,17 @@
-import os
-from pathlib import Path
 import pandas as pd
-
-# Load .env from script directory (optional)
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / ".env")
-except ImportError:
-    pass
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
 # ----------------------------
 # 1) CONFIG
 # ----------------------------
-MYSQL_USER = os.environ.get("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD")
-if not MYSQL_PASSWORD:
-    raise SystemExit("MYSQL_PASSWORD environment variable is required")
-MYSQL_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
-MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
-DB_NAME = os.environ.get("MYSQL_DATABASE", "climate_db")
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "SE"
+MYSQL_HOST = "127.0.0.1"
+MYSQL_PORT = 3306
+DB_NAME = "climate_db"
 
-BASE_PATH = "/Users/mahsa/Downloads/DB"
+BASE_PATH = "/Users/nazdimziaei/Downloads/Climate"
 
 worldbank_file = f"{BASE_PATH}/API_SH.STA.AIRP.P5_DS2_en_csv_v2_6093.csv"
 metadata_file = f"{BASE_PATH}/Metadata_Country_API_SH.STA.AIRP.P5_DS2_en_csv_v2_6093.csv"

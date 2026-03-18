@@ -106,25 +106,25 @@ function App() {
     if (selectedEndpoint === '/api/top-pollution-mortality') {
       return [
         {
-          title: 'Average PM2.5 AQI and Mortality by Country',
+          title: 'Average PM2.5 and Mortality by Country',
           xKey: 'country_name',
           bars: [
-            { key: 'avg_pm25_aqi', color: getFieldColor('avg_pm25_aqi'), name: 'Avg PM2.5 AQI' },
+            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5' },
             { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' }
           ]
         }
       ];
     }
 
-    if (selectedEndpoint === '/api/aqi-high-pollution-cities') {
+    if (selectedEndpoint === '/api/aqi-pm25-crosscheck') {
       return [
         {
-          title: 'Cities with High AQI by Region',
+          title: 'AQI and WHO Pollution Comparison',
           xKey: 'city_name',
           bars: [
             { key: 'avg_pm25_aqi', color: getFieldColor('avg_pm25_aqi'), name: 'Avg PM2.5 AQI' },
-            { key: 'avg_aqi', color: getFieldColor('avg_aqi'), name: 'Avg AQI' },
-            { key: 'avg_no2_aqi', color: getFieldColor('avg_no2_aqi'), name: 'Avg NO2 AQI' }
+            { key: 'avg_pm25_concentration', color: getFieldColor('avg_pm25_concentration'), name: 'Avg PM2.5 Concentration' },
+            { key: 'avg_no2_concentration', color: getFieldColor('avg_no2_concentration'), name: 'Avg NO2 Concentration' }
           ]
         }
       ];
@@ -168,7 +168,7 @@ function App() {
           title: 'Cities in High-Mortality Countries',
           xKey: 'city_name',
           bars: [
-            { key: 'avg_pm25_aqi', color: getFieldColor('avg_pm25_aqi'), name: 'Avg PM2.5 AQI' },
+            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5' },
             { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' }
           ]
         }
@@ -232,7 +232,7 @@ function App() {
         <div>
           <h1>Climate Intelligence Dashboard</h1>
           <p>
-            Air pollution health analysis using World Bank mortality, OECD DALYs, city AQI, and country metadata.
+            Multi-source environmental health analysis using World Bank, WHO, AQI, OECD, and metadata tables.
           </p>
         </div>
       </header>
