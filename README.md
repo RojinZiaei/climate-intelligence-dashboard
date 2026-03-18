@@ -52,7 +52,7 @@ React + Recharts Dashboard
 
 ### Frontend
 - React
-- Recharts (visualization)
+- Recharts 
 - Glassmorphism UI styling
 
 ---
