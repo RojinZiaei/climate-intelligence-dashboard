@@ -16,12 +16,13 @@ const API_BASE = 'http://localhost:3000/api';
 function App() {
   const [catalog, setCatalog] = useState([]);
   const [legendMap, setLegendMap] = useState({});
-  const [selectedEndpoint, setSelectedEndpoint] = useState('/api/top-pollution-mortality');
+  const [selectedEndpoint, setSelectedEndpoint] = useState('/api/global-health-snapshot');
   const [queryResult, setQueryResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [typedInsight, setTypedInsight] = useState('');
 
+  // 1. Fetch Catalog & Legend on mount
   useEffect(() => {
     fetch(`${API_BASE}/query-catalog`)
       .then((res) => {
@@ -46,6 +47,7 @@ function App() {
       });
   }, []);
 
+  // 2. Fetch Data when selected endpoint changes
   useEffect(() => {
     if (!selectedEndpoint) return;
 
@@ -68,18 +70,19 @@ function App() {
       });
   }, [selectedEndpoint]);
 
+  // 3. Handle Typing Effect for Insights
   const selectedQueryMeta = useMemo(() => {
     return catalog.find((query) => query.endpoint === selectedEndpoint);
   }, [catalog, selectedEndpoint]);
 
   useEffect(() => {
-    if (!selectedQueryMeta?.insight) {
+    if (!selectedQueryMeta?.description) {
       setTypedInsight('');
       return;
     }
 
     let i = 0;
-    const text = selectedQueryMeta.insight;
+    const text = selectedQueryMeta.description;
     setTypedInsight('');
 
     const interval = setInterval(() => {
@@ -94,145 +97,147 @@ function App() {
     return () => clearInterval(interval);
   }, [selectedQueryMeta]);
 
+  // 4. Color Mapping Helper
   const getFieldColor = (fieldName) => {
     if (!queryResult?.sourceMap) return '#1f2937';
     const tableName = queryResult.sourceMap[fieldName];
     return legendMap[tableName]?.color || '#1f2937';
   };
 
+  // 5. Chart Configurations for the 10 Queries (8-table schema)
   const chartConfigs = useMemo(() => {
     if (!queryResult?.data?.length) return [];
 
-    if (selectedEndpoint === '/api/top-pollution-mortality') {
-      return [
-        {
-          title: 'Average PM2.5 and Mortality by Country',
+    switch (selectedEndpoint) {
+      case '/api/global-health-snapshot':
+        return [{
+          title: 'Mortality Rate by Country (2019)',
+          xKey: 'country_name',
+          bars: [{ key: 'mortality_rate_2019', color: getFieldColor('mortality_rate_2019'), name: 'Mortality Rate' }]
+        }];
+
+      case '/api/oecd-dalys-income':
+        return [{
+          title: 'Average DALYs Lost by Income Group (OECD, 2019)',
+          xKey: 'income_group',
+          bars: [{ key: 'avg_daly_lost', color: getFieldColor('avg_daly_lost'), name: 'Avg DALYs Lost' }]
+        }];
+
+      case '/api/hazardous-cities':
+        return [{
+          title: 'Hazardous PM2.5 AQI by City',
+          xKey: 'city',
+          bars: [
+            { key: 'pm25_aqi_value', color: getFieldColor('pm25_aqi_value'), name: 'PM2.5 AQI' },
+            { key: 'co_aqi_value', color: getFieldColor('co_aqi_value'), name: 'CO AQI' },
+            { key: 'no2_aqi_value', color: getFieldColor('no2_aqi_value'), name: 'NO₂ AQI' }
+          ]
+        }];
+
+      case '/api/regional-hotspots':
+        return [{
+          title: 'Severely Polluted Cities by Region',
+          xKey: 'region',
+          bars: [{ key: 'severely_polluted_cities', color: getFieldColor('severely_polluted_cities'), name: 'Polluted Cities Count' }]
+        }];
+
+      case '/api/decade-trend':
+        return [{
+          title: 'OECD DALYs: 2010 vs 2019 (Europe & Central Asia)',
           xKey: 'country_name',
           bars: [
-            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5' },
-            { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' }
+            { key: 'daly_2010', color: getFieldColor('daly_2010'), name: '2010 DALYs' },
+            { key: 'daly_2019', color: getFieldColor('daly_2019'), name: '2019 DALYs' }
           ]
-        }
-      ];
-    }
+        }];
 
-    if (selectedEndpoint === '/api/aqi-pm25-crosscheck') {
-      return [
-        {
-          title: 'AQI and WHO Pollution Comparison',
-          xKey: 'city_name',
+      case '/api/safest-high-income':
+        return [{
+          title: 'Cleanest High-Income Cities (All Pollutants)',
+          xKey: 'city',
           bars: [
-            { key: 'avg_pm25_aqi', color: getFieldColor('avg_pm25_aqi'), name: 'Avg PM2.5 AQI' },
-            { key: 'avg_pm25_concentration', color: getFieldColor('avg_pm25_concentration'), name: 'Avg PM2.5 Concentration' },
-            { key: 'avg_no2_concentration', color: getFieldColor('avg_no2_concentration'), name: 'Avg NO2 Concentration' }
+            { key: 'aqi_value', color: getFieldColor('aqi_value'), name: 'Overall AQI' },
+            { key: 'pm25_aqi_value', color: getFieldColor('pm25_aqi_value'), name: 'PM2.5' },
+            { key: 'co_aqi_value', color: getFieldColor('co_aqi_value'), name: 'CO' },
+            { key: 'ozone_aqi_value', color: getFieldColor('ozone_aqi_value'), name: 'Ozone' },
+            { key: 'no2_aqi_value', color: getFieldColor('no2_aqi_value'), name: 'NO₂' }
           ]
-        }
-      ];
-    }
+        }];
 
-    if (selectedEndpoint === '/api/mortality-by-income') {
-      return [
-        {
-          title: 'Average Mortality by Income Group',
-          xKey: 'income_group',
-          bars: [
-            { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' }
-          ]
-        },
-        {
-          title: 'Average PM2.5 by Income Group',
-          xKey: 'income_group',
-          bars: [
-            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5' }
-          ]
-        }
-      ];
-    }
-
-    if (selectedEndpoint === '/api/high-mortality-health-burden') {
-      return [
-        {
-          title: 'Mortality and Health Burden by Country',
+      case '/api/dual-source':
+        return [{
+          title: 'World Bank Mortality vs OECD DALYs (2017)',
           xKey: 'country_name',
           bars: [
-            { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' },
-            { key: 'avg_health_burden', color: getFieldColor('avg_health_burden'), name: 'Avg Health Burden' }
+            { key: 'wb_mortality_rate', color: getFieldColor('wb_mortality_rate'), name: 'WB Mortality Rate' },
+            { key: 'oecd_daly_rate', color: getFieldColor('oecd_daly_rate'), name: 'OECD DALYs' }
           ]
-        }
-      ];
-    }
+        }];
 
-    if (selectedEndpoint === '/api/cities-in-high-mortality-countries') {
-      return [
-        {
-          title: 'Cities in High-Mortality Countries',
-          xKey: 'city_name',
+      case '/api/city-vs-national':
+        return [{
+          title: 'City AQI vs National Mortality',
+          xKey: 'city',
           bars: [
-            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5' },
-            { key: 'avg_mortality', color: getFieldColor('avg_mortality'), name: 'Avg Mortality' }
+            { key: 'city_current_aqi', color: getFieldColor('city_current_aqi'), name: 'City Current AQI' },
+            { key: 'national_mortality_rate_2019', color: getFieldColor('national_mortality_rate_2019'), name: 'National Mortality (2019)' }
           ]
-        }
-      ];
-    }
+        }];
 
-    return [];
+      case '/api/health-data-coverage':
+        return [{
+          title: 'Total Health Records by Region (via VIEW)',
+          xKey: 'region',
+          bars: [{ key: 'total_records', color: getFieldColor('total_records'), name: 'Total Data Records' }]
+        }];
+
+      case '/api/category-aggregator':
+        return [{
+          title: 'Cities per AQI Category (Sub-Saharan Africa)',
+          xKey: 'category_name',
+          bars: [
+            { key: 'number_of_cities', color: getFieldColor('number_of_cities'), name: 'Number of Cities' },
+            { key: 'average_pm25', color: getFieldColor('average_pm25'), name: 'Avg PM2.5' },
+            { key: 'average_co', color: getFieldColor('average_co'), name: 'Avg CO' },
+            { key: 'average_no2', color: getFieldColor('average_no2'), name: 'Avg NO₂' },
+            { key: 'average_ozone', color: getFieldColor('average_ozone'), name: 'Avg Ozone' }
+          ]
+        }];
+
+      default:
+        return [];
+    }
   }, [queryResult, selectedEndpoint, legendMap]);
 
+  // 6. Generic Summary Cards
   const summaryCards = useMemo(() => {
     if (!queryResult?.data?.length) return [];
 
-    const rows = queryResult.data;
+    const firstRow = queryResult.data[0];
 
-    if (selectedEndpoint === '/api/mortality-by-income') {
-      const highestMortality = rows.reduce((max, row) =>
-        Number(row.avg_mortality) > Number(max.avg_mortality) ? row : max
-      , rows[0]);
-
-      const highestPM25 = rows.reduce((max, row) =>
-        Number(row.avg_pm25) > Number(max.avg_pm25) ? row : max
-      , rows[0]);
-
-      const totalCountries = rows.reduce((sum, row) => sum + Number(row.countries_count || 0), 0);
-
-      return [
-        {
-          label: 'Highest Mortality Group',
-          value: highestMortality.income_group,
-          field: 'income_group'
-        },
-        {
-          label: 'Max Avg Mortality',
-          value: highestMortality.avg_mortality,
-          field: 'avg_mortality'
-        },
-        {
-          label: 'Max Avg PM2.5',
-          value: highestPM25.avg_pm25,
-          field: 'avg_pm25'
-        },
-        {
-          label: 'Total Countries Counted',
-          value: totalCountries,
-          field: 'countries_count'
+    return Object.entries(firstRow)
+      .slice(0, 4)
+      .map(([key, value]) => {
+        let displayValue = value;
+        if (typeof value === 'number' && value % 1 !== 0) {
+          displayValue = value.toFixed(2);
         }
-      ];
-    }
 
-    const firstRow = rows[0];
-    return Object.entries(firstRow).slice(0, 4).map(([key, value]) => ({
-      label: key,
-      value,
-      field: key
-    }));
+        return {
+          label: `Top result: ${key.replace(/_/g, ' ')}`,
+          value: displayValue,
+          field: key
+        };
+      });
   }, [queryResult, selectedEndpoint]);
 
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
-          <h1>Climate Intelligence Dashboard</h1>
+          <h1>BCNF Air Pollution &amp; Health Dashboard</h1>
           <p>
-            Multi-source environmental health analysis using World Bank, WHO, AQI, OECD, and metadata tables.
+            8-table relational schema with multi-source data analysis — World Bank mortality, OECD DALYs, and city-level AQI across 5 pollutant types.
           </p>
         </div>
       </header>
@@ -249,7 +254,6 @@ function App() {
                 onClick={() => setSelectedEndpoint(query.endpoint)}
               >
                 <span className="query-title">{query.title}</span>
-                <span className="query-description">{query.description}</span>
               </button>
             ))}
           </div>
@@ -271,7 +275,7 @@ function App() {
         <main className="content">
           {loading && (
             <div className="card status-card">
-              <p>Loading query...</p>
+              <p>Executing query...</p>
             </div>
           )}
 
@@ -285,11 +289,10 @@ function App() {
             <>
               <section className="card result-header">
                 <h2>{queryResult.queryName}</h2>
-                <p>{queryResult.description}</p>
 
                 <div className="meta-row">
                   <div className="pill">
-                    <span className="pill-label">Rows</span>
+                    <span className="pill-label">Rows Returned</span>
                     <span className="pill-value">{queryResult.rowCount}</span>
                   </div>
 
@@ -307,28 +310,10 @@ function App() {
                   ))}
                 </div>
 
-                {selectedQueryMeta?.insight && (
+                {selectedQueryMeta?.description && (
                   <section className="insight-box">
-                    <h3>Insight</h3>
+                    <h3>Query Objective</h3>
                     <p className="typing-cursor">{typedInsight}</p>
-
-                    {selectedQueryMeta.tables?.length > 0 && (
-                      <div className="insight-tables">
-                        <span className="insight-label">Tables used:</span>
-                        {selectedQueryMeta.tables.map((table) => (
-                          <span
-                            key={table}
-                            className="insight-table-pill"
-                            style={{
-                              borderColor: legendMap[table]?.color || '#cbd5e1',
-                              color: legendMap[table]?.color || '#334155'
-                            }}
-                          >
-                            {legendMap[table]?.label || table}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                   </section>
                 )}
               </section>
@@ -365,26 +350,27 @@ function App() {
                         <ResponsiveContainer width="100%" height={380}>
                           <BarChart
                             data={queryResult.data}
-                            margin={{ top: 10, right: 20, left: 10, bottom: 70 }}
+                            margin={{ top: 10, right: 20, left: 10, bottom: 85 }}
                           >
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
                               dataKey={chart.xKey}
-                              angle={-35}
+                              angle={-40}
                               textAnchor="end"
                               interval={0}
-                              height={90}
+                              height={100}
+                              tick={{ fontSize: 12 }}
                             />
                             <YAxis />
                             <Tooltip />
-                            <Legend />
+                            <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
                             {chart.bars.map((bar) => (
                               <Bar
                                 key={bar.key}
                                 dataKey={bar.key}
                                 fill={bar.color}
                                 name={bar.name}
-                                radius={[6, 6, 0, 0]}
+                                radius={[4, 4, 0, 0]}
                               />
                             ))}
                           </BarChart>
@@ -395,7 +381,7 @@ function App() {
 
                   <section className="card table-card">
                     <div className="table-card-header">
-                      <h3>Query Results</h3>
+                      <h3>Raw Query Results</h3>
                     </div>
 
                     <div className="table-wrapper">
