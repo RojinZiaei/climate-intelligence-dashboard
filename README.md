@@ -2,7 +2,7 @@
 
 A full-stack data dashboard that integrates multiple international datasets to analyze the relationship between air pollution, health outcomes, and economic context.
 
-The system combines data from the **World Bank, WHO, OECD, and AQI sources** into a unified relational database and exposes analytical queries through a web interface.
+The system combines data from the **World Bank, WHO, OECD, and AQI sources** into a unified relational database normalized to **BCNF**, and exposes analytical queries through a web interface.
 
 ---
 
@@ -13,8 +13,8 @@ Air pollution is one of the largest environmental health risks worldwide. Howeve
 This project builds a **multi-source environmental intelligence system** that:
 
 - integrates global pollution datasets
-- normalizes schemas across sources
-- stores them in a relational database
+- normalizes schemas across sources to **BCNF**
+- stores them in a relational database (MySQL)
 - exposes analytical queries through a backend API
 - visualizes insights through a web dashboard
 
@@ -24,19 +24,24 @@ The dashboard allows users to explore patterns such as:
 - cities with severe air quality
 - links between pollution and mortality
 - health burden across regions
+- decade-long trends in DALYs
 
 ---
 
 ## System Architecture
 
 ```
-Datasets
+Raw Datasets (World Bank, OECD, WHO, AQI)
    ↓
-MySQL Database
+Python ETL (transformData.py)
    ↓
-Node.js + Express API
+7 BCNF CSV Files
    ↓
-React Dashboard
+MySQL Database (8 tables: 7 base + 1 VIEW)
+   ↓
+Node.js + Express API (10 canned queries)
+   ↓
+React + Recharts Dashboard
 ```
 
 ### Backend
@@ -54,99 +59,111 @@ React Dashboard
 
 ## Data Sources
 
-The system integrates multiple datasets:
-
 | Source | Data Type |
-|------|------|
-| WHO Air Quality Database | PM2.5 / NO2 city-level pollution |
-| World Bank | Mortality from air pollution |
-| OECD | Health burden indicators |
-| City AQI dataset | Real-time pollution indices |
-| Country Metadata | Region and income group |
+|--------|-----------|
+| World Bank | Mortality rate attributed to air pollution |
+| OECD | Disability-adjusted life years (DALYs) from PM2.5 |
+| City AQI dataset | City-level AQI with 5 pollutant types |
+| Country Metadata | Region and income group classification |
 
-These datasets were **cleaned and unified** using shared country codes.
-
----
-
-## Database Design
-
-The database includes the following core tables:
-
-- `countries_metadata`
-- `wb_air_pollution_mortality`
-- `who_air_quality`
-- `city_aqi`
-- `oecd_health_burden`
-
-The schema is designed in **BCNF** and supports multi-table joins for analytical queries.
+These datasets were **cleaned, unpivoted, and unified** using shared country codes.
 
 ---
 
-## Example Analytical Queries
+## Database Design (BCNF — 8 Tables)
 
-The dashboard includes several "canned queries":
+| # | Table | Type | Primary Key | Description |
+|---|-------|------|-------------|-------------|
+| 1 | `country` | table | `country_code` | Country metadata: region, income group, special notes |
+| 2 | `indicator` | table | `indicator_code` | Health indicator definitions and source organization |
+| 3 | `aqi_reference` | table | `category_name` | AQI category lookup (Good → Hazardous with value ranges) |
+| 4 | `city_aqi` | table | `(country, city, lat, lng)` | City-level AQI with 5 pollutant columns |
+| 5 | `mortality_normalized` | table | `(country_code, indicator_code, year)` | World Bank mortality data (unpivoted) |
+| 6 | `oecd_normalized` | table | `(ref_area, time_period)` | OECD DALYs data (native column names) |
+| 7 | `mortality_wide_raw` | table | `(country_code, indicator_code)` | Staging table (wide format, year columns) |
+| 8 | `health_impacts` | **VIEW** | — | UNION of `mortality_normalized` + `oecd_normalized` |
 
-### 1. Mortality and PM2.5 by Income Group
-Compares air pollution exposure and mortality rates across economic categories.
+The schema is designed in **BCNF** — every determinant is a candidate key.
 
-**Insight:**  
-Lower-income countries experience significantly higher pollution exposure and mortality.
-
-Tables used:
-
-- World Bank Mortality
-- WHO Air Quality
-- Country Metadata
-
----
-
-### 2. High Pollution and High Mortality Countries
-Identifies countries where pollution exposure and mortality are both high.
-
-Tables used:
-
-- WHO Air Quality
-- World Bank Mortality
-- Country Metadata
+Key design decisions:
+- **AQI categories removed from city_aqi** to eliminate transitive dependencies (category depends on value, not city). Use `aqi_reference` for lookups via range-based JOINs.
+- **WB and OECD data stored separately** in source-specific normalized tables. The `health_impacts` VIEW unions them for cross-source queries.
+- **`mortality_wide_raw`** preserves the original wide-format staging data (years as columns).
 
 ---
 
-### 3. AQI and WHO Cross-Validation
-Finds cities where both AQI data and WHO pollution measurements indicate severe pollution.
+## Canned Queries (10 Analytical Queries)
 
-Tables used:
+### Q1 — Global Health Snapshot (2019)
+Top 30 countries by air pollution mortality rate.
+**Tables:** `country`, `mortality_normalized`, `indicator`
 
-- City AQI
-- WHO Air Quality
-- Country Metadata
+### Q2 — OECD DALYs by Income Group
+Average DALYs lost to PM2.5, grouped by country wealth level.
+**Tables:** `country`, `oecd_normalized`
 
----
+### Q3 — Cities with Hazardous PM2.5 Levels
+Cities where PM2.5 AQI exceeds 300, using range-based JOIN.
+**Tables:** `city_aqi`, `aqi_reference`, `country`
 
-### 4. Health Burden and Pollution Mortality
-Links national pollution mortality with broader health system burden.
+### Q4 — Regional Pollution Hotspots
+Count of cities with AQI > 150 per world region.
+**Tables:** `country`, `city_aqi`, `aqi_reference`
 
-Tables used:
+### Q5 — OECD Decade Trend (2010 vs 2019)
+DALY rate changes over a decade using a self-join on `oecd_normalized`.
+**Tables:** `country`, `oecd_normalized`
 
-- World Bank Mortality
-- OECD Health Burden
-- Country Metadata
+### Q6 — Safest Cities in High-Income Nations
+Cleanest cities with full pollutant breakdown.
+**Tables:** `country`, `city_aqi`, `aqi_reference`
+
+### Q7 — Dual-Source Comparison (WB + OECD)
+Countries with data in both sources, cross-joining both normalized tables.
+**Tables:** `country`, `mortality_normalized`, `oecd_normalized`
+
+### Q8 — City AQI vs. National Mortality
+Top 50 most polluted cities compared with their country's mortality rate.
+**Tables:** `country`, `mortality_normalized`, `city_aqi`
+
+### Q9 — Health Data Coverage Check
+Record counts per region and source, queried through the `health_impacts` VIEW.
+**Tables:** `country`, `health_impacts` (VIEW), `indicator`
+
+### Q10 — AQI Category Aggregator (Sub-Saharan Africa)
+Distribution of AQI categories with average pollutant levels.
+**Tables:** `city_aqi`, `aqi_reference`, `country`
 
 ---
 
 ## Features
 
-- Interactive dashboard
-- Multi-source data integration
-- SQL joins across multiple datasets
-- Chart visualization
-- Source attribution for each metric
-- Insight explanations for each query
+- Interactive dashboard with 10 canned queries
+- Multi-source data integration (World Bank + OECD + AQI)
+- 8-table BCNF-normalized schema with a SQL VIEW
+- SQL joins: inner, left, self-joins, range-based, and cross-source
+- Recharts bar chart visualization with source color-coding
+- Column-level data provenance (each field color-coded by source table)
+- Typing animation for query descriptions
+- Responsive glassmorphism UI
 
 ---
 
 ## Running the Project
 
-### Backend
+### 1. Generate CSVs (requires raw data files)
+
+```
+python3 transformData.py
+```
+
+### 2. Create database and load data
+
+```
+mysql -u root -p < schema.sql
+```
+
+### 3. Start the backend
 
 ```
 cd Backend
@@ -154,44 +171,23 @@ npm install
 node server.js
 ```
 
-Backend runs on:
+Backend runs on: `http://localhost:3000`
+
+### 4. Start the frontend
 
 ```
-http://localhost:3000
-```
-
----
-
-### Frontend
-
-```
-cd Frontend
 npm install
 npm start
 ```
 
-Frontend runs on:
-
-```
-http://localhost:3001
-```
+Frontend runs on: `http://localhost:3001`
 
 ---
-
-## Example Dashboard
-
-The dashboard shows:
-
-- pollution vs mortality trends
-- income-group comparisons
-- city-level pollution hotspots
-- regional health burden
-
-Charts are generated dynamically from SQL query results.
 
 ## Dashboard Preview
 
 ![Dashboard](dashboard.png)
+
 ---
 
 ## Technologies
@@ -201,6 +197,7 @@ Charts are generated dynamically from SQL query results.
 - Express
 - MySQL
 - Recharts
+- Python (pandas)
 - SQL
 - Glassmorphism UI design
 
@@ -208,17 +205,15 @@ Charts are generated dynamically from SQL query results.
 
 ## Future Improvements
 
-Possible extensions:
-
-- add climate datasets (temperature / CO₂)
-- integrate satellite pollution measurements
-- allow user-defined SQL queries
-- deploy the dashboard online
+- Add climate datasets (temperature / CO₂)
+- Integrate satellite pollution measurements
+- Allow user-defined SQL queries
+- Deploy the dashboard online
 
 ---
 
-## Author
+## Authors
 
-Rojin Ziaei  
+Rojin Ziaei
 Mahsa Khoshnoodi
 Georgetown University
