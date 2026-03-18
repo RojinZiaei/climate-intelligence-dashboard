@@ -1,5 +1,5 @@
 -- ============================================================
--- Climate Intelligence Dashboard — 8-Table BCNF Schema
+-- Climate Intelligence Dashboard — 9-Table BCNF Schema
 -- ============================================================
 
 DROP DATABASE IF EXISTS air_pollution;
@@ -154,7 +154,31 @@ LINES TERMINATED BY '\n'
 IGNORE 1 ROWS;
 
 -- ============================================================
--- 8. health_impacts  (VIEW — unions the two source tables)
+-- 8. who_air_quality  (WHO Ambient Air Quality Database)
+--    BCNF: PK (country_code, city, year, latitude, longitude)
+--    FD:   PK → pm25_concentration, pm10_concentration, no2_concentration
+-- ============================================================
+CREATE TABLE who_air_quality (
+    country_code       VARCHAR(10),
+    city               VARCHAR(200),
+    year               INT,
+    pm25_concentration DECIMAL(10,2),
+    pm10_concentration DECIMAL(10,2),
+    no2_concentration  DECIMAL(10,2),
+    latitude           DECIMAL(10,6),
+    longitude          DECIMAL(10,6),
+    PRIMARY KEY (country_code, city(100), year, latitude, longitude)
+);
+
+LOAD DATA LOCAL INFILE 'who_air_quality.csv'
+INTO TABLE who_air_quality
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(country_code, city, year, pm25_concentration, pm10_concentration, no2_concentration, latitude, longitude);
+
+-- ============================================================
+-- 9. health_impacts  (VIEW — unions the two source tables)
 -- ============================================================
 CREATE VIEW health_impacts AS
     SELECT country_code, indicator_code, year, impact_value
@@ -165,3 +189,4 @@ CREATE VIEW health_impacts AS
            time_period AS year,
            obs_value   AS impact_value
     FROM oecd_normalized;
+

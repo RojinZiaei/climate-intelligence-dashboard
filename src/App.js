@@ -191,6 +191,27 @@ function App() {
           bars: [{ key: 'total_records', color: getFieldColor('total_records'), name: 'Total Data Records' }]
         }];
 
+      case '/api/who-vs-mortality':
+        return [{
+          title: 'WHO PM2.5 Concentration vs WB Mortality',
+          xKey: 'country_name',
+          bars: [
+            { key: 'avg_who_pm25', color: getFieldColor('avg_who_pm25'), name: 'WHO Avg PM2.5 (µg/m³)' },
+            { key: 'wb_mortality_rate', color: getFieldColor('wb_mortality_rate'), name: 'WB Mortality Rate' }
+          ]
+        }];
+
+      case '/api/who-regional-pm25':
+        return [{
+          title: 'WHO Pollutant Concentrations by Region',
+          xKey: 'region',
+          bars: [
+            { key: 'avg_pm25', color: getFieldColor('avg_pm25'), name: 'Avg PM2.5 (µg/m³)' },
+            { key: 'avg_no2', color: getFieldColor('avg_no2'), name: 'Avg NO₂ (µg/m³)' },
+            { key: 'avg_pm10', color: getFieldColor('avg_pm10'), name: 'Avg PM10 (µg/m³)' }
+          ]
+        }];
+
       case '/api/category-aggregator':
         return [{
           title: 'Cities per AQI Category (Sub-Saharan Africa)',
@@ -237,7 +258,7 @@ function App() {
         <div>
           <h1>BCNF Air Pollution &amp; Health Dashboard</h1>
           <p>
-            8-table relational schema with multi-source data analysis — World Bank mortality, OECD DALYs, and city-level AQI across 5 pollutant types.
+            9-table relational schema with multi-source data analysis — World Bank mortality, OECD DALYs, WHO air quality, and city-level AQI.
           </p>
         </div>
       </header>

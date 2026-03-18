@@ -48,6 +48,7 @@ app.get('/api/source-legend', (req, res) => {
     mortality_normalized:  { label: 'WB Mortality (Normalized)',     color: '#E8B67F' },
     oecd_normalized:       { label: 'OECD DALYs (Normalized)',       color: '#E87FB6' },
     mortality_wide_raw:    { label: 'Mortality Wide (Staging)',       color: '#8CB6E8' },
+    who_air_quality:       { label: 'WHO Air Quality',                color: '#7FE8C8' },
     health_impacts:        { label: 'Health Impacts (View)',          color: '#E8D67F' }
   });
 });
@@ -117,6 +118,20 @@ app.get('/api/query-catalog', (req, res) => {
       endpoint: '/api/health-data-coverage',
       description: 'Counts health records per region and data source by querying the health_impacts VIEW, which internally unions mortality_normalized and oecd_normalized.',
       tables: ['country', 'health_impacts', 'indicator']
+    },
+    {
+      id: 'who-vs-mortality',
+      title: 'WHO PM2.5 vs National Mortality',
+      endpoint: '/api/who-vs-mortality',
+      description: 'Cross-validates WHO city-level PM2.5 concentrations against World Bank national mortality rates by joining who_air_quality with mortality_normalized through the country table.',
+      tables: ['who_air_quality', 'country', 'mortality_normalized']
+    },
+    {
+      id: 'who-regional-pm25',
+      title: 'WHO PM2.5 Trends by Region',
+      endpoint: '/api/who-regional-pm25',
+      description: 'Average PM2.5 concentration by world region from WHO measurements, showing the geographic distribution of fine particulate matter.',
+      tables: ['who_air_quality', 'country']
     },
     {
       id: 'category-aggregator',
@@ -387,7 +402,68 @@ app.get('/api/health-data-coverage', (req, res) => {
 });
 
 // ============================================================
-// Q10 — AQI Category Aggregator (Sub-Saharan Africa)
+// Q10 — WHO PM2.5 vs National Mortality
+//   Tables: who_air_quality, country, mortality_normalized
+//   Cross-validates WHO city-level PM2.5 against WB mortality
+// ============================================================
+app.get('/api/who-vs-mortality', (req, res) => {
+  const sql = `
+    SELECT c.table_name AS country_name, c.region,
+           ROUND(AVG(w.pm25_concentration), 1) AS avg_who_pm25,
+           ROUND(m.impact_value, 1) AS wb_mortality_rate
+    FROM who_air_quality w
+    JOIN country c ON w.country_code = c.country_code
+    JOIN mortality_normalized m ON c.country_code = m.country_code
+    WHERE m.indicator_code = 'SH.STA.AIRP.P5'
+      AND m.year = 2019
+      AND w.pm25_concentration IS NOT NULL
+      AND c.region IS NOT NULL
+    GROUP BY c.country_code, c.table_name, c.region, m.impact_value
+    ORDER BY avg_who_pm25 DESC
+    LIMIT 30;
+  `;
+  const sourceMap = {
+    country_name: 'country', region: 'country',
+    avg_who_pm25: 'who_air_quality',
+    wb_mortality_rate: 'mortality_normalized'
+  };
+  db.query(sql, (err, results) => sendQueryResponse(res, err, results,
+    'WHO PM2.5 vs National Mortality',
+    'WHO city PM2.5 averages vs WB mortality by country.',
+    sourceMap, ['who_air_quality', 'country', 'mortality_normalized']));
+});
+
+// ============================================================
+// Q11 — WHO PM2.5 Trends by Region
+//   Tables: who_air_quality, country
+// ============================================================
+app.get('/api/who-regional-pm25', (req, res) => {
+  const sql = `
+    SELECT c.region,
+           COUNT(DISTINCT w.city) AS cities_measured,
+           ROUND(AVG(w.pm25_concentration), 1) AS avg_pm25,
+           ROUND(AVG(w.no2_concentration), 1) AS avg_no2,
+           ROUND(AVG(w.pm10_concentration), 1) AS avg_pm10
+    FROM who_air_quality w
+    JOIN country c ON w.country_code = c.country_code
+    WHERE w.pm25_concentration IS NOT NULL
+      AND c.region IS NOT NULL
+    GROUP BY c.region
+    ORDER BY avg_pm25 DESC;
+  `;
+  const sourceMap = {
+    region: 'country', cities_measured: 'who_air_quality',
+    avg_pm25: 'who_air_quality', avg_no2: 'who_air_quality',
+    avg_pm10: 'who_air_quality'
+  };
+  db.query(sql, (err, results) => sendQueryResponse(res, err, results,
+    'WHO PM2.5 Trends by Region',
+    'Average pollutant concentrations from WHO measurements.',
+    sourceMap, ['who_air_quality', 'country']));
+});
+
+// ============================================================
+// Q12 — AQI Category Aggregator (Sub-Saharan Africa)
 //   Tables: city_aqi, aqi_reference, country
 //   Sub-Saharan Africa has hundreds of cities
 // ============================================================
