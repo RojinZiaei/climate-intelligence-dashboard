@@ -22,6 +22,13 @@ function App() {
   const [error, setError] = useState('');
   const [typedInsight, setTypedInsight] = useState('');
 
+  // Custom query state
+  const [customMode, setCustomMode] = useState(false);
+  const [customSql, setCustomSql] = useState('SELECT c.table_name AS country, c.region, c.income_group\nFROM country c\nWHERE c.region IS NOT NULL\nLIMIT 10;');
+  const [customResult, setCustomResult] = useState(null);
+  const [customError, setCustomError] = useState('');
+  const [customLoading, setCustomLoading] = useState(false);
+
   // 1. Fetch Catalog & Legend on mount
   useEffect(() => {
     fetch(`${API_BASE}/query-catalog`)
@@ -265,14 +272,24 @@ function App() {
 
       <div className="main-layout">
         <aside className="sidebar card">
-          <h2 className="sidebar-title">Canned Queries</h2>
+          <h2 className="sidebar-title">Queries</h2>
+
+          <button
+            className={`query-button custom-query-btn ${customMode ? 'active' : ''}`}
+            onClick={() => { setCustomMode(true); setError(''); }}
+            style={customMode ? { background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 'none' } : { background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}
+          >
+            <span className="query-title">✏️ Custom SQL Query</span>
+          </button>
+
+          <div style={{ margin: '12px 0 4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.2px', color: '#94a3b8', fontWeight: 600 }}>Canned Queries</div>
 
           <div className="query-list">
             {catalog.map((query) => (
               <button
                 key={query.id}
-                className={`query-button ${selectedEndpoint === query.endpoint ? 'active' : ''}`}
-                onClick={() => setSelectedEndpoint(query.endpoint)}
+                className={`query-button ${!customMode && selectedEndpoint === query.endpoint ? 'active' : ''}`}
+                onClick={() => { setCustomMode(false); setSelectedEndpoint(query.endpoint); }}
               >
                 <span className="query-title">{query.title}</span>
               </button>
@@ -294,163 +311,303 @@ function App() {
         </aside>
 
         <main className="content">
-          {loading && (
-            <div className="card status-card">
-              <p>Executing query...</p>
-            </div>
-          )}
-
-          {error && !loading && (
-            <div className="card status-card error-card">
-              <p>{error}</p>
-            </div>
-          )}
-
-          {queryResult && !loading && !error && (
+          {customMode ? (
+            /* ==================== CUSTOM QUERY MODE ==================== */
             <>
               <section className="card result-header">
-                <h2>{queryResult.queryName}</h2>
-
-                <div className="meta-row">
-                  <div className="pill">
-                    <span className="pill-label">Rows Returned</span>
-                    <span className="pill-value">{queryResult.rowCount}</span>
-                  </div>
-
-                  {queryResult.tablesUsed?.map((table) => (
-                    <div
-                      key={table}
-                      className="table-pill"
-                      style={{
-                        borderColor: legendMap[table]?.color || '#cbd5e1',
-                        color: legendMap[table]?.color || '#334155'
-                      }}
-                    >
-                      {legendMap[table]?.label || table}
-                    </div>
-                  ))}
-                </div>
-
-                {selectedQueryMeta?.description && (
-                  <section className="insight-box">
-                    <h3>Query Objective</h3>
-                    <p className="typing-cursor">{typedInsight}</p>
-                  </section>
-                )}
+                <h2>✏️ Custom SQL Query</h2>
+                <p style={{ color: '#94a3b8', margin: '4px 0 0', fontSize: '14px' }}>
+                  Write a SELECT query against the BCNF schema. Only SELECT is allowed. A LIMIT of 200 is added automatically if not specified.
+                </p>
               </section>
 
-              {summaryCards.length > 0 && (
-                <section className="summary-grid">
-                  {summaryCards.map((card, index) => (
-                    <div key={index} className="card summary-card">
-                      <div
-                        className="summary-key"
-                        style={{ color: getFieldColor(card.field) }}
-                      >
-                        {card.label}
-                      </div>
-                      <div className="summary-value">{card.value}</div>
-                    </div>
-                  ))}
+              <section className="card" style={{ padding: '24px' }}>
+                <div style={{ marginBottom: '8px', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600 }}>SQL Editor</div>
+                <textarea
+                  value={customSql}
+                  onChange={(e) => setCustomSql(e.target.value)}
+                  spellCheck={false}
+                  style={{
+                    width: '100%', minHeight: '160px', padding: '16px',
+                    fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", monospace', fontSize: '14px', lineHeight: '1.6',
+                    background: 'rgba(15, 23, 42, 0.8)', color: '#e2e8f0', border: '1px solid rgba(99,102,241,0.3)',
+                    borderRadius: '10px', resize: 'vertical', outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = 'rgba(99,102,241,0.7)'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(99,102,241,0.3)'}
+                />
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '16px' }}>
+                  <button
+                    onClick={() => {
+                      if (!customSql.trim()) return;
+                      setCustomLoading(true);
+                      setCustomError('');
+                      setCustomResult(null);
+                      fetch(`${API_BASE}/custom-query`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sql: customSql })
+                      })
+                        .then(r => r.json())
+                        .then(data => {
+                          if (data.error) {
+                            setCustomError(data.details || data.error);
+                          } else {
+                            setCustomResult(data);
+                          }
+                          setCustomLoading(false);
+                        })
+                        .catch(err => {
+                          setCustomError(err.message);
+                          setCustomLoading(false);
+                        });
+                    }}
+                    disabled={customLoading || !customSql.trim()}
+                    style={{
+                      padding: '10px 28px', fontWeight: 600, fontSize: '14px',
+                      background: customLoading ? '#475569' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                      color: '#fff', border: 'none', borderRadius: '8px', cursor: customLoading ? 'wait' : 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {customLoading ? '⏳ Running...' : '▶ Run Query'}
+                  </button>
+
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    Tables: country, indicator, aqi_reference, city_aqi, mortality_normalized, oecd_normalized, who_air_quality, mortality_wide_raw, health_impacts (view)
+                  </div>
+                </div>
+              </section>
+
+              {customError && (
+                <section className="card status-card error-card">
+                  <h3>Query Error</h3>
+                  <p style={{ fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap' }}>{customError}</p>
                 </section>
               )}
 
-              {queryResult.rowCount === 0 ? (
-                <section className="card status-card">
-                  <h3>No matching rows returned</h3>
-                  <p>
-                    This query executed successfully, but the joined datasets did not produce matching rows for the current conditions.
-                  </p>
-                </section>
-              ) : (
+              {customResult && (
                 <>
-                  {chartConfigs.map((chart, idx) => (
-                    <section key={idx} className="card chart-card">
-                      <h3>{chart.title}</h3>
-                      <div className="chart-wrapper">
-                        <ResponsiveContainer width="100%" height={380}>
-                          <BarChart
-                            data={queryResult.data}
-                            margin={{ top: 10, right: 20, left: 10, bottom: 85 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis
-                              dataKey={chart.xKey}
-                              angle={-40}
-                              textAnchor="end"
-                              interval={0}
-                              height={100}
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis />
-                            <Tooltip />
-                            <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
-                            {chart.bars.map((bar) => (
-                              <Bar
-                                key={bar.key}
-                                dataKey={bar.key}
-                                fill={bar.color}
-                                name={bar.name}
-                                radius={[4, 4, 0, 0]}
-                              />
-                            ))}
-                          </BarChart>
-                        </ResponsiveContainer>
+                  <section className="card result-header">
+                    <div className="meta-row">
+                      <div className="pill">
+                        <span className="pill-label">Rows Returned</span>
+                        <span className="pill-value">{customResult.rowCount}</span>
                       </div>
-                    </section>
-                  ))}
-
-                  <section className="card table-card">
-                    <div className="table-card-header">
-                      <h3>Raw Query Results</h3>
+                      <div className="pill">
+                        <span className="pill-label">Columns</span>
+                        <span className="pill-value">{customResult.columns?.length || 0}</span>
+                      </div>
                     </div>
+                  </section>
 
-                    <div className="table-wrapper">
-                      <table>
-                        <thead>
-                          <tr>
-                            {queryResult.data.length > 0 &&
-                              Object.keys(queryResult.data[0]).map((field) => (
-                                <th
-                                  key={field}
-                                  style={{
-                                    borderBottom: `3px solid ${getFieldColor(field)}`
-                                  }}
-                                >
-                                  <span
-                                    className="header-chip"
-                                    style={{
-                                      color: getFieldColor(field),
-                                      borderColor: getFieldColor(field)
-                                    }}
-                                  >
-                                    {field}
+                  {customResult.rowCount === 0 ? (
+                    <section className="card status-card">
+                      <h3>No rows returned</h3>
+                      <p>The query executed successfully but returned no matching rows.</p>
+                    </section>
+                  ) : (
+                    <section className="card table-card">
+                      <div className="table-card-header">
+                        <h3>Query Results</h3>
+                      </div>
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              {customResult.columns.map((col) => (
+                                <th key={col} style={{ borderBottom: '3px solid #6366f1' }}>
+                                  <span className="header-chip" style={{ color: '#a5b4fc', borderColor: '#6366f1' }}>
+                                    {col}
                                   </span>
                                 </th>
                               ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {queryResult.data.map((row, rowIndex) => (
-                            <tr key={rowIndex}>
-                              {Object.entries(row).map(([field, value]) => (
-                                <td key={field}>
-                                  <span
-                                    className="cell-badge"
-                                    style={{
-                                      borderLeft: `4px solid ${getFieldColor(field)}`
-                                    }}
-                                  >
-                                    {value}
-                                  </span>
-                                </td>
-                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {customResult.data.map((row, ri) => (
+                              <tr key={ri}>
+                                {customResult.columns.map((col) => (
+                                  <td key={col}>
+                                    <span className="cell-badge" style={{ borderLeft: '4px solid #6366f1' }}>
+                                      {row[col] === null ? <em style={{ color: '#475569' }}>NULL</em> : String(row[col])}
+                                    </span>
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            /* ==================== CANNED QUERY MODE ==================== */
+            <>
+              {loading && (
+                <div className="card status-card">
+                  <p>Executing query...</p>
+                </div>
+              )}
+
+              {error && !loading && (
+                <div className="card status-card error-card">
+                  <p>{error}</p>
+                </div>
+              )}
+
+              {queryResult && !loading && !error && (
+                <>
+                  <section className="card result-header">
+                    <h2>{queryResult.queryName}</h2>
+
+                    <div className="meta-row">
+                      <div className="pill">
+                        <span className="pill-label">Rows Returned</span>
+                        <span className="pill-value">{queryResult.rowCount}</span>
+                      </div>
+
+                      {queryResult.tablesUsed?.map((table) => (
+                        <div
+                          key={table}
+                          className="table-pill"
+                          style={{
+                            borderColor: legendMap[table]?.color || '#cbd5e1',
+                            color: legendMap[table]?.color || '#334155'
+                          }}
+                        >
+                          {legendMap[table]?.label || table}
+                        </div>
+                      ))}
                     </div>
+
+                    {selectedQueryMeta?.description && (
+                      <section className="insight-box">
+                        <h3>Query Objective</h3>
+                        <p className="typing-cursor">{typedInsight}</p>
+                      </section>
+                    )}
                   </section>
+
+                  {summaryCards.length > 0 && (
+                    <section className="summary-grid">
+                      {summaryCards.map((card, index) => (
+                        <div key={index} className="card summary-card">
+                          <div
+                            className="summary-key"
+                            style={{ color: getFieldColor(card.field) }}
+                          >
+                            {card.label}
+                          </div>
+                          <div className="summary-value">{card.value}</div>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+
+                  {queryResult.rowCount === 0 ? (
+                    <section className="card status-card">
+                      <h3>No matching rows returned</h3>
+                      <p>
+                        This query executed successfully, but the joined datasets did not produce matching rows for the current conditions.
+                      </p>
+                    </section>
+                  ) : (
+                    <>
+                      {chartConfigs.map((chart, idx) => (
+                        <section key={idx} className="card chart-card">
+                          <h3>{chart.title}</h3>
+                          <div className="chart-wrapper">
+                            <ResponsiveContainer width="100%" height={380}>
+                              <BarChart
+                                data={queryResult.data}
+                                margin={{ top: 10, right: 20, left: 10, bottom: 85 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis
+                                  dataKey={chart.xKey}
+                                  angle={-40}
+                                  textAnchor="end"
+                                  interval={0}
+                                  height={100}
+                                  tick={{ fontSize: 12 }}
+                                />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
+                                {chart.bars.map((bar) => (
+                                  <Bar
+                                    key={bar.key}
+                                    dataKey={bar.key}
+                                    fill={bar.color}
+                                    name={bar.name}
+                                    radius={[4, 4, 0, 0]}
+                                  />
+                                ))}
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </section>
+                      ))}
+
+                      <section className="card table-card">
+                        <div className="table-card-header">
+                          <h3>Raw Query Results</h3>
+                        </div>
+
+                        <div className="table-wrapper">
+                          <table>
+                            <thead>
+                              <tr>
+                                {queryResult.data.length > 0 &&
+                                  Object.keys(queryResult.data[0]).map((field) => (
+                                    <th
+                                      key={field}
+                                      style={{
+                                        borderBottom: `3px solid ${getFieldColor(field)}`
+                                      }}
+                                    >
+                                      <span
+                                        className="header-chip"
+                                        style={{
+                                          color: getFieldColor(field),
+                                          borderColor: getFieldColor(field)
+                                        }}
+                                      >
+                                        {field}
+                                      </span>
+                                    </th>
+                                  ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {queryResult.data.map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                  {Object.entries(row).map(([field, value]) => (
+                                    <td key={field}>
+                                      <span
+                                        className="cell-badge"
+                                        style={{
+                                          borderLeft: `4px solid ${getFieldColor(field)}`
+                                        }}
+                                      >
+                                        {value}
+                                      </span>
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </>
+                  )}
                 </>
               )}
             </>

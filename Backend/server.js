@@ -493,6 +493,44 @@ app.get('/api/category-aggregator', (req, res) => {
     sourceMap, ['city_aqi', 'aqi_reference', 'country']));
 });
 
+// ============================================================
+// Custom Query Endpoint — accepts user-written SQL
+// Only SELECT statements allowed for safety
+// ============================================================
+app.post('/api/custom-query', (req, res) => {
+  const { sql } = req.body;
+
+  if (!sql || !sql.trim()) {
+    return res.status(400).json({ error: 'No SQL query provided.' });
+  }
+
+  // Block anything that isn't a SELECT
+  const forbidden = /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE)/i;
+  if (forbidden.test(sql.trim())) {
+    return res.status(403).json({ error: 'Only SELECT queries are allowed.' });
+  }
+
+  // Add LIMIT if not present to prevent huge result sets
+  const hasLimit = /\bLIMIT\b/i.test(sql);
+  const safeSql = hasLimit ? sql : `${sql.replace(/;\s*$/, '')} LIMIT 200`;
+
+  db.query(safeSql, (err, results) => {
+    if (err) {
+      return res.status(400).json({
+        error: 'Query execution failed',
+        details: err.sqlMessage || err.message
+      });
+    }
+    res.json({
+      queryName: 'Custom Query',
+      description: sql.trim(),
+      rowCount: results.length,
+      columns: results.length > 0 ? Object.keys(results[0]) : [],
+      data: results
+    });
+  });
+});
+
 app.listen(port, () => {
   console.log(`Air Pollution API running at http://localhost:${port}`);
 });
