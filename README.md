@@ -65,7 +65,10 @@ pip3 install pandas numpy
 
 ### MySQL Configuration
 
-The backend connects to MySQL with these defaults (hardcoded in `Backend/server.js`):
+### Frontend
+- React
+- Recharts 
+- Glassmorphism UI styling
 
 | Setting | Value |
 |---------|-------|
@@ -366,6 +369,6 @@ GROUP BY c.income_group;
 
 ## Authors
 
-Rojin Ziaei  
-Mahsa Khoshnoodi  
+Rojin Ziaei
+Mahsa Khoshnoodi
 Georgetown University
