@@ -1,0 +1,7 @@
+category_name,min_value,max_value
+Good,0,50
+Moderate,51,100
+Unhealthy for Sensitive Groups,101,150
+Unhealthy,151,200
+Very Unhealthy,201,300
+Hazardous,301,2000

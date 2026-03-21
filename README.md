@@ -1,8 +1,8 @@
-# Climate Intelligence Dashboard
+# AirLense
 
-A full-stack web dashboard that integrates **4 international datasets** (World Bank, OECD, WHO, AQI) into a BCNF-normalized relational database and visualizes air pollution, health outcomes, and economic patterns through **12 analytical queries** + a **custom SQL query editor**.
+**AirLense** is a full-stack web app that loads **World Bank**, **OECD**, **WHO**, and **city AQI** data into a **BCNF-normalized** MySQL schema and exposes **16 canned analytical queries** (including **CTEs**, **window functions** (`ROW_NUMBER`), **self-joins**, and a **multi-source** join) plus a **read-only custom SQL** editor. **MySQL 8.0+** recommended for **Q14–Q15** (windows + CTEs); **Q16** runs on **5.7+** (self-join only).
 
-![Dashboard](dashboard.png)
+![AirLense dashboard](dashboard.png)
 
 ---
 
@@ -12,38 +12,46 @@ A full-stack web dashboard that integrates **4 international datasets** (World B
 - [Prerequisites](#prerequisites)
 - [Project Structure](#project-structure)
 - [Data Sources](#data-sources)
-- [Database Schema (9 Tables, BCNF)](#database-schema-9-tables-bcnf)
+- [Database Schema](#database-schema)
 - [ETL Pipeline](#etl-pipeline)
 - [Backend API](#backend-api)
 - [Frontend](#frontend)
 - [Canned Queries](#canned-queries)
-- [Custom SQL Query Tab](#custom-sql-query-tab)
-- [Troubleshooting](#troubleshooting)
+- [Custom SQL](#custom-sql)
+- [Troubleshooting](#troubleshooting) · [Detailed guide](docs/TROUBLESHOOTING.md)
+- [Data sources report](docs/DATA_SOURCES_REPORT.md) — SH vs WHO vs EN, redundancy, joins
+- [Normalization proof (NF1–BCNF)](docs/NORMALIZATION_PROOF.md) — per-table FDs
+- [Assignment: three data aspects](docs/ASSIGNMENT_THREE_ASPECTS.md) — burden vs exposure vs subnational air quality
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Generate CSVs from raw data
+# 1. Python ETL — raw CSVs in data/ → clean_data/*.csv
+pip3 install -r requirements.txt
 python3 transformData.py
 
-# 2. Create database + load data into MySQL
+# 2. MySQL — create DB and load (from project root; needs --local-infile)
 mysql -u root -p --local-infile=1 < schema.sql
 
-# 3. Start the backend (Terminal 1)
+# 3. Backend (Terminal 1)
 cd Backend
-npm install
-node server.js
-# → http://localhost:3000
-
-# 4. Start the frontend (Terminal 2, from project root)
+cp .env.example .env   # edit DB_USER, DB_PASSWORD (database is always air_pollution)
 npm install
 npm start
-# → http://localhost:3001
+# API → http://localhost:3000
+
+# 4. Frontend (Terminal 2)
+cd Frontend
+npm install
+npm start
+# App → http://localhost:3001 (PORT set in Frontend/package.json to avoid clashing with API)
 ```
 
 Open **http://localhost:3001** in your browser.
+
+**Windows:** if `PORT=3001` in `npm start` fails, run `cd Frontend` then `set PORT=3001&&npm start`, or install `cross-env` and adjust the script in `Frontend/package.json`.
 
 ---
 
@@ -51,324 +59,235 @@ Open **http://localhost:3001** in your browser.
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Node.js** | v18+ | Backend API + React frontend |
-| **npm** | v9+ | Package manager |
+| **Node.js** | v18+ | Backend + React |
+| **npm** | v9+ | Packages |
 | **MySQL** | 8.0+ | Database |
-| **Python 3** | 3.8+ | ETL script |
-| **pandas** | any | Python data processing |
-
-Install Python dependencies:
-
-```bash
-pip3 install pandas numpy
-```
-
-### MySQL Configuration
-
-### Frontend
-- React
-- Recharts 
-- Glassmorphism UI styling
-
-| Setting | Value |
-|---------|-------|
-| Host | `localhost` |
-| User | `root` |
-| Password | `shirin ebadi` |
-| Database | `air_pollution` |
-
-Update these in `Backend/server.js` (lines 13–18) if your MySQL setup differs.
-
-The `schema.sql` script uses `LOAD DATA LOCAL INFILE`. If you get an error, enable it:
-
-```sql
-SET GLOBAL local_infile = 1;
-```
-
-Or run mysql with:
-
-```bash
-mysql -u root -p --local-infile=1 < schema.sql
-```
+| **Python** | 3.8+ | `transformData.py` |
 
 ---
 
 ## Project Structure
 
 ```
-JsAirPolution/
+airlense/   # project root (clone path may differ)
 ├── Backend/
-│   ├── server.js              # Express API — 12 canned queries + custom query endpoint
-│   └── package.json           # Backend dependencies (express, mysql2, cors)
-│
-├── src/
-│   ├── App.js                 # React dashboard — charts, query selector, custom SQL tab
-│   ├── App.css                # Glassmorphism styling
-│   ├── index.js               # React entry point
-│   └── index.css              # Global styles
-│
-├── public/
-│   └── index.html             # HTML shell
-│
-├── Data/                      # Raw source data (7 files)
-│   ├── MetadataCountry.csv                         # World Bank country metadata
-│   ├── mortality_trimmed.csv                       # World Bank mortality rates
-│   ├── API_SH.STA.AIRP.P5_DS2_en_csv_v2_6093.csv  # World Bank raw mortality (full)
-│   ├── OECD...csv                                  # OECD DALYs from PM2.5
-│   ├── AQI and Lat Long of Countries.csv           # City-level AQI measurements
-│   ├── who_ambient_air_quality_...csv              # WHO Air Quality Database v2023
-│   └── Metadata_Indicator...csv                    # Indicator metadata
-│
-├── transformData.py           # ETL: reads raw Data/ → outputs 8 CSVs
-├── schema.sql                 # DDL: creates 9 tables + loads CSVs into MySQL
-│
-├── country.csv                # Generated CSV — country metadata
-├── indicator.csv              # Generated CSV — health indicator definitions
-├── aqi_reference.csv          # Generated CSV — AQI category lookup
-├── city_aqi.csv               # Generated CSV — city AQI with 5 pollutants
-├── mortality_normalized.csv   # Generated CSV — WB mortality (unpivoted)
-├── oecd_normalized.csv        # Generated CSV — OECD DALYs
-├── mortality_wide_raw.csv     # Generated CSV — WB staging (wide format)
-├── who_air_quality.csv        # Generated CSV — WHO air quality measurements
-│
-├── package.json               # Frontend dependencies (react, recharts)
-├── dashboard.png              # Dashboard screenshot
-└── README.md                  # This file
+│   ├── server.js           # Express API — canned queries + POST /api/custom-query
+│   ├── package.json
+│   └── .env.example        # Copy to .env for DB credentials
+├── Frontend/               # React app (Create React App)
+│   ├── src/
+│   │   ├── App.js          # Dashboard UI, charts, custom SQL tab
+│   │   ├── App.css
+│   │   ├── index.js
+│   │   └── index.css
+│   ├── public/
+│   │   └── index.html
+│   └── package.json        # react-scripts; PORT=3001 on start
+├── data/                   # Raw inputs (not committed if large — add as needed)
+├── clean_data/             # Generated by transformData.py (CSV loads for MySQL)
+├── transformData.py        # ETL: data/ → clean_data/
+├── schema.sql              # DDL + LOAD DATA for all tables + health_impacts VIEW
+├── requirements.txt        # pandas, numpy
+└── README.md
 ```
+
+### Raw files expected under `data/` (see `transformData.py`)
+
+| File | Role |
+|------|------|
+| `Metadata_Country_API_SH.STA.AIRP.P5_DS2_en_csv_v2_6093.csv` | Country metadata |
+| `API_SH.STA.AIRP.P5_DS2_en_csv_v2_6093.csv` | World Bank mortality (wide years) |
+| `OECD.ENV.EPI,DSD_EXP_MORSC@DF_EXP_MORSC,1.0+.A.DALY.10P3HB.PM_2_5_OUT._T._T.csv` | OECD DALYs |
+| `AQI and Lat Long of Countries.csv` | City AQI |
+| `who_ambient_air_quality_database_version_2023_(v6.0).xlsx - Update 2023 (V6.0).csv` | WHO stations |
+| `API_EN.ATM.PM25.MC.M3_DS2_en_csv_v2_316.csv` | PM2.5 exposure (World Bank) |
+| Plus metadata CSVs for PM2.5 API | As referenced in script |
 
 ---
 
 ## Data Sources
 
-| # | Source | File | Description | Records |
-|---|--------|------|-------------|---------|
-| 1 | **World Bank** | `MetadataCountry.csv` | Country classification (region, income group) | 265 countries |
-| 2 | **World Bank** | `mortality_trimmed.csv` | Mortality rate attributed to air pollution | 231 × 1 year (2019) |
-| 3 | **OECD** | `OECD...csv` | Disability-adjusted life years (DALYs) from PM2.5 | 212 countries × 10 years |
-| 4 | **AQI Dataset** | `AQI and Lat Long of Countries.csv` | City-level AQI with 5 pollutant types | ~16,700 cities |
-| 5 | **WHO** | `who_ambient_air_quality_...csv` | City-level PM2.5, PM10, NO2 concentrations | ~41,200 measurements |
+**Written report:** [docs/DATA_SOURCES_REPORT.md](docs/DATA_SOURCES_REPORT.md) — explains how **World Bank SH (mortality)**, **EN (PM2.5 exposure)**, **WHO concentrations**, **city AQI**, and **OECD DALYs** differ, what is redundant (`mortality_wide_raw` vs normalized), and suggested join patterns.
+
+**Normalization:** [docs/NORMALIZATION_PROOF.md](docs/NORMALIZATION_PROOF.md) — formal **1NF, 2NF, 3NF, BCNF** justification for the normalized base tables (+ view).
+
+| Source | Content |
+|--------|---------|
+| **World Bank** | Country metadata; air-pollution mortality (`SH.STA.AIRP.P5`); mean PM2.5 exposure (`EN.ATM.PM25.MC.M3`) |
+| **OECD** | DALYs from outdoor PM2.5 exposure |
+| **AQI dataset** | City-level AQI and pollutant sub-indices with coordinates |
+| **WHO** | Ambient air quality (PM2.5, PM10, NO2) by city/year |
 
 ---
 
-## Database Schema (9 Tables, BCNF)
+## Database Schema
 
-All tables satisfy **Boyce-Codd Normal Form** — every non-trivial functional dependency has a superkey as its determinant.
+**9 tables** (BCNF core + optional wide staging) **+ 1 VIEW** `health_impacts` (unions World Bank mortality rows with OECD rows). See [docs/NORMALIZATION_PROOF.md](docs/NORMALIZATION_PROOF.md) for NF1–BCNF proofs.
 
-| # | Table | Type | Primary Key | Rows | Source |
-|---|-------|------|-------------|------|--------|
-| 1 | `country` | table | `country_code` | 265 | World Bank |
-| 2 | `indicator` | table | `indicator_code` | 2 | World Bank |
-| 3 | `aqi_reference` | table | `category_name` | 6 | Derived |
-| 4 | `city_aqi` | table | `(country, city, lat, lng)` | 16,695 | AQI Dataset |
-| 5 | `mortality_normalized` | table | `(country_code, indicator_code, year)` | 231 | World Bank |
-| 6 | `oecd_normalized` | table | `(ref_area, time_period)` | 2,120 | OECD |
-| 7 | `mortality_wide_raw` | table | `(country_code, indicator_code)` | staging | World Bank |
-| 8 | `who_air_quality` | table | `(country_code, city, year, lat, lng)` | 41,236 | WHO |
-| 9 | `health_impacts` | **VIEW** | — | 2,351 | UNION of #5 + #6 |
+| Table | Primary key | Notes |
+|-------|-------------|--------|
+| `country` | `country_code` | Region, income, `table_name` (display name) |
+| `indicator` | `indicator_code` | WB / OECD / PM2.5 indicator definitions |
+| `aqi_reference` | `category_name` | AQI category bounds |
+| `city_aqi` | `(country_code, city, lat, lng)` | Join `country` on `country_code` |
+| `mortality_normalized` | `(country_code, indicator_code, year)` | Unpivoted WB mortality |
+| `oecd_normalized` | `(country_code, year)` | Columns: `obs_value` |
+| `who_air_quality` | `(country_code, city, year, latitude, longitude)` | Concentrations µg/m³ |
+| `pm25_exposure_normalized` | `(country_code, year, indicator_code)` | National mean exposure |
+| `mortality_wide_raw` | `(country_code, indicator_code)` | **Staging only** — wide years (not 1NF) |
+| `health_impacts` | — (VIEW) | `mortality_normalized` ∪ OECD as `DALY_PM25` |
 
-### Key Design Decisions
+`mortality_wide_raw` duplicates mortality in wide form for tooling; prefer `mortality_normalized` for analytics.
 
-- **AQI categories removed from `city_aqi`** — eliminates transitive dependency (`aqi_value → category`). Use range-based JOINs with `aqi_reference` instead.
-- **WB and OECD kept in separate tables** — different source schemas. The `health_impacts` VIEW unifies them for cross-source queries.
-- **`who_air_quality` stores concentrations (µg/m³)** — distinct from `city_aqi` which stores AQI index values. No redundancy.
-- **`mortality_wide_raw` is a staging table** — preserves the original wide-format data (years as columns) for reference.
+**MySQL database name:** `air_pollution` (created by `schema.sql`). The API **always** connects to `air_pollution`; `DB_NAME` / `MYSQL_DATABASE` in `.env` are ignored so they can’t point at the wrong database.
 
-### Entity-Relationship Diagram
+### MySQL: `LOAD DATA` and `local_infile`
 
+```bash
+mysql -u root -p --local-infile=1 < schema.sql
 ```
-country ──┬── mortality_normalized ──── indicator
-           ├── oecd_normalized
-           ├── who_air_quality
-           └── city_aqi ──── aqi_reference (range JOIN)
 
-health_impacts = VIEW(mortality_normalized UNION oecd_normalized)
+If the server rejects local infile:
+
+```sql
+SET GLOBAL local_infile = 1;
 ```
 
 ---
 
 ## ETL Pipeline
 
-`transformData.py` reads the 5 raw data files and outputs 8 clean CSVs:
-
-```
-Raw Data Files (Data/)          →  transformData.py  →  8 CSVs (project root)
-                                                     →  schema.sql loads CSVs → MySQL
-```
-
-### Updating Data Paths
-
-The script uses absolute paths. If your raw data is in a different location, update lines 5–9 in `transformData.py`:
-
-```python
-country_meta = pd.read_csv('Data/MetadataCountry.csv')        # adjust path
-mortality_raw = pd.read_csv('Data/mortality_trimmed.csv')      # adjust path
-# ... etc
-```
-
-### Running the ETL
-
 ```bash
 python3 transformData.py
 ```
 
-Output:
+Writes **9 CSVs** into `clean_data/` (including `mortality_wide_raw.csv`). Then run `schema.sql` as above.
 
-```
-Data successfully transformed into 8 clean CSVs!
-Tables: country, indicator, aqi_reference, city_aqi, mortality_normalized, oecd_normalized, mortality_wide_raw, who_air_quality
-Note: health_impacts is a SQL VIEW — see schema.sql
-```
+Paths are relative to the project root (`data/`, `clean_data/`).
 
 ---
 
 ## Backend API
 
-**Location:** `Backend/server.js`  
-**Port:** 3000  
-**Dependencies:** express, mysql2, cors
+| | |
+|--|--|
+| **Root** | `Backend/server.js` |
+| **Port** | `3000` (or `PORT` in `.env`) |
+| **Config** | `Backend/.env` — `DB_*` **or** `MYSQL_*` for host/user/password/port (`MYSQL_DATABASE` ignored; DB is always `air_pollution`) |
 
 ### Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/source-legend` | Color/label map for all 9 tables |
-| GET | `/api/query-catalog` | Metadata for all 12 canned queries |
-| GET | `/api/global-health-snapshot` | Q1: Top 30 countries by mortality |
-| GET | `/api/oecd-dalys-income` | Q2: OECD DALYs by income group |
-| GET | `/api/hazardous-cities` | Q3: Cities with PM2.5 > 300 |
-| GET | `/api/regional-hotspots` | Q4: Polluted cities count by region |
-| GET | `/api/decade-trend` | Q5: OECD DALYs 2010 vs 2019 |
-| GET | `/api/safest-high-income` | Q6: Cleanest high-income cities |
-| GET | `/api/dual-source` | Q7: WB + OECD cross-comparison |
-| GET | `/api/city-vs-national` | Q8: City AQI vs national mortality |
-| GET | `/api/health-data-coverage` | Q9: Coverage via health_impacts VIEW |
-| GET | `/api/who-vs-mortality` | Q10: WHO PM2.5 vs WB mortality |
-| GET | `/api/who-regional-pm25` | Q11: WHO PM2.5 by region |
-| GET | `/api/category-aggregator` | Q12: AQI categories in Sub-Saharan Africa |
-| **POST** | `/api/custom-query` | **Custom SQL** (SELECT only, LIMIT 200 default) |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | API + MySQL ping (`database: true/false`) |
+| GET | `/api/source-legend` | Colors / labels per table |
+| GET | `/api/query-catalog` | 16 canned query definitions |
+| GET | `/api/global-health-snapshot` | Q1 — WB mortality 2019 |
+| GET | `/api/oecd-dalys-income` | Q2 — OECD by income group |
+| GET | `/api/hazardous-cities` | Q3 — Hazardous PM2.5 AQI |
+| GET | `/api/regional-hotspots` | Q4 — Unhealthy+ cities by region |
+| GET | `/api/safest-high-income` | Q5 — Good AQI in high-income |
+| GET | `/api/dual-source` | Q6 — WB + OECD 2019 |
+| GET | `/api/city-vs-national` | Q7 — City AQI vs national mortality |
+| GET | `/api/who-vs-mortality` | Q8 — WHO PM2.5 vs WB mortality |
+| GET | `/api/who-regional-pm25` | Q9 — WHO aggregates by region |
+| GET | `/api/category-aggregator` | Q10 — AQI categories in Sub-Saharan Africa |
+| GET | `/api/wb-pm25-by-region` | Q11 — WB mean PM2.5 exposure by region (latest year, `API_EN…` / `pm25_exposure_normalized`) |
+| GET | `/api/wb-pm25-vs-mortality` | Q12 — WB PM2.5 exposure vs air-pollution mortality (2019) |
+| GET | `/api/multi-source-pm25-health-2019` | Q13 — **Complex JOIN**: EN national PM2.5 + WHO city PM2.5 + SH mortality + OECD DALY (2019) |
+| GET | `/api/top-cities-per-region-aqi` | Q14 — **CTE + `ROW_NUMBER()`**: top 3 cities by AQI per world region |
+| GET | `/api/wb-pm25-above-regional-average-2019` | Q15 — **CTE**: countries whose WB EN PM2.5 (2019) exceeds their region’s mean |
+| GET | `/api/oecd-daly-yoy-2018-2019` | Q16 — **Self-join** `oecd_normalized`: DALY **change from 2018 to 2019** (largest \|Δ\|; WB SH extract here is 2019-only) |
+| GET | `/api/mortality-yoy-change-2018-2019` | **Deprecated alias** — same handler as Q16 (old path; use `/api/oecd-daly-yoy-2018-2019`) |
+| POST | `/api/custom-query` | `SELECT` only; `LIMIT 200` if omitted |
 
-### Response Format (Canned Queries)
-
-```json
-{
-  "queryName": "Global Health Snapshot (2019)",
-  "description": "Top 30 countries by air pollution mortality.",
-  "rowCount": 30,
-  "sourceMap": { "country_name": "country", "mortality_rate_2019": "mortality_normalized" },
-  "tablesUsed": ["country", "mortality_normalized", "indicator"],
-  "data": [...]
-}
-```
-
-### Custom Query Request
+### Custom query (example)
 
 ```bash
 curl -X POST http://localhost:3000/api/custom-query \
   -H "Content-Type: application/json" \
-  -d '{"sql": "SELECT * FROM country WHERE region = '\''South Asia'\''"}'
+  -d '{"sql": "SELECT * FROM country WHERE region = '\''South Asia'\'' LIMIT 10"}'
 ```
 
 ---
 
 ## Frontend
 
-**Location:** `src/App.js`, `src/App.css`  
-**Port:** 3001  
-**Dependencies:** React 18, Recharts
+| | |
+|--|--|
+| **Folder** | `Frontend/` |
+| **Entry** | `Frontend/src/App.js`, `Frontend/src/App.css` |
+| **URL** | `http://localhost:3001` (`PORT` in `Frontend/package.json`) |
+| **API** | `http://localhost:3000/api` (see `API_BASE` in `Frontend/src/App.js`) |
 
-### Features
+**Stack:** React 18, Recharts, glass-style CSS.
 
-- **Sidebar** with 12 canned query buttons + Custom SQL Query button
-- **Source color map** — each table has a unique color shown in the legend
-- **Bar charts** via Recharts with per-field color coding
-- **Results table** with column headers color-coded by source table
-- **Summary cards** showing top result values
-- **Typing animation** for query descriptions
-- **Custom SQL editor** — monospace textarea with Run Query button
-- **Glassmorphism UI** with dark theme
+**Features:** Sidebar with canned queries (collapsible) + custom SQL tab, source-colored charts and tables, typing effect on descriptions.
 
 ---
 
 ## Canned Queries
 
-| # | Query | Tables Used | SQL Techniques |
-|---|-------|-------------|----------------|
-| Q1 | Global Health Snapshot (2019) | country, mortality_normalized, indicator | 3-table JOIN |
-| Q2 | OECD DALYs by Income Group | country, oecd_normalized | GROUP BY, AVG |
-| Q3 | Hazardous PM2.5 Cities | city_aqi, aqi_reference, country | Range-based JOIN (BETWEEN), LEFT JOIN |
-| Q4 | Regional Pollution Hotspots | country, city_aqi, aqi_reference | COUNT, GROUP BY |
-| Q5 | OECD Decade Trend (2010 vs 2019) | country, oecd_normalized | **Self-join** |
-| Q6 | Safest Cities (High-Income) | city_aqi, country, aqi_reference | Multi-table JOIN, ORDER BY |
-| Q7 | Dual-Source Comparison | country, mortality_normalized, oecd_normalized | **Cross-source JOIN** |
-| Q8 | City AQI vs National Mortality | city_aqi, country, mortality_normalized | Mixed granularity JOIN |
-| Q9 | Health Data Coverage | country, health_impacts (VIEW), indicator | **VIEW query**, GROUP BY |
-| Q10 | WHO PM2.5 vs Mortality | who_air_quality, country, mortality_normalized | **3-source cross-validation** |
-| Q11 | WHO PM2.5 by Region | who_air_quality, country | Aggregate concentrations |
-| Q12 | AQI Category Aggregator | city_aqi, aqi_reference, country | Range JOIN, multi-AVG |
+The sidebar / **`/api/query-catalog`** order is **complex → simpler**: multi-source joins, CTEs, and window functions first; straightforward joins and lookups last.
+
+Queries join on **`country_code`** where applicable. `city_aqi` does **not** store a redundant country name column — use `JOIN country c ON city_aqi.country_code = c.country_code` and `c.table_name` for labels.
+
+| # | Theme |
+|---|--------|
+| Q1–Q4 | Global mortality, OECD by income, hazardous cities, regional hotspots |
+| Q5–Q7 | Safest cities, dual-source WB+OECD, city vs national |
+| Q8–Q10 | WHO vs mortality, WHO by region, SSA AQI categories |
+| Q11–Q12 | World Bank **EN.ATM.PM25.MC.M3** national exposure: by region; exposure vs mortality (2019) |
+| Q13 | **Multi-source (2019):** `pm25_exposure_normalized` + `mortality_normalized` + `oecd_normalized` + WHO city aggregate — compare national EN PM2.5 to WHO urban PM2.5 and burden metrics |
+| Q14–Q15 | **MySQL 8+:** `ROW_NUMBER` (Q14) and `WITH` CTE (Q15) |
+| Q16 | OECD DALY **change from 2018 to 2019** via **self-join** (MySQL 5.7+); WB SH file in `data/` only has **2019** filled for this indicator |
 
 ---
 
-## Custom SQL Query Tab
+## Custom SQL
 
-Click **"✏️ Custom SQL Query"** at the top of the sidebar to open the SQL editor.
-
-- Write any `SELECT` statement against the 9 tables
-- `INSERT`, `UPDATE`, `DELETE`, `DROP`, etc. are **blocked**
-- A `LIMIT 200` is added automatically if you don't specify one
-- Results appear in a styled table below the editor
-- MySQL error messages are shown inline for debugging
-
-### Example Custom Queries
+- Only **`SELECT`** (writes blocked server-side).
+- **`LIMIT 200`** appended if missing.
+- Example:
 
 ```sql
--- Top 10 most polluted cities
-SELECT city, country, aqi_value, pm25_aqi_value
-FROM city_aqi ORDER BY aqi_value DESC LIMIT 10;
-
--- Countries in both WHO and WB datasets
-SELECT DISTINCT c.table_name, c.region
-FROM country c
-JOIN who_air_quality w ON c.country_code = w.country_code
-JOIN mortality_normalized m ON c.country_code = m.country_code;
-
--- Average WHO PM2.5 by income group
-SELECT c.income_group, ROUND(AVG(w.pm25_concentration), 1) AS avg_pm25
-FROM who_air_quality w
-JOIN country c ON w.country_code = c.country_code
-WHERE c.income_group IS NOT NULL
-GROUP BY c.income_group;
+SELECT c.table_name AS country, a.city, a.aqi_value, a.pm25_aqi_value
+FROM city_aqi a
+JOIN country c ON a.country_code = c.country_code
+ORDER BY a.aqi_value DESC
+LIMIT 10;
 ```
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| `ECONNREFUSED` or "Failed to fetch" | Backend not running. Run `cd Backend && node server.js` |
-| `ER_NO_SUCH_TABLE` | Database not set up. Run `mysql -u root -p --local-infile=1 < schema.sql` |
-| `Table has 0 rows` | CSVs not generated. Run `python3 transformData.py` first |
-| `command not found: python` | Use `python3` on macOS |
-| `local_infile disabled` | Run `mysql -u root -p -e "SET GLOBAL local_infile = 1;"` |
-| Frontend on wrong port | Frontend runs on `:3001`, backend on `:3000` |
-| Custom query blocked | Only `SELECT` is allowed — no write operations |
+| Issue | What to try |
+|-------|-------------|
+| `ECONNREFUSED` / fetch failed / “Failed to fetch query results” | Start API: `cd Backend && npm start`. If the UI shows **`API 500: …`**, fix MySQL (`schema.sql` loaded, `Backend/.env` credentials). If backend uses another port, set `REACT_APP_API_ORIGIN` in `Frontend/.env` and restart `npm start`. |
+| Port clash | Backend `3000`, frontend `3001`; edit `Frontend/package.json` or `Frontend/src/App.js` (`API_BASE`) if you remap |
+| `Cannot find module` / wrong directory | Run `npm install` and `npm start` from **`Frontend/`**, not the repo root |
+| `ER_NO_SUCH_TABLE` | Run `schema.sql` after `transformData.py` |
+| Empty tables | Run `python3 transformData.py`, then reload SQL |
+| `local_infile` denied | `mysql --local-infile=1` or `SET GLOBAL local_infile = 1` |
+| Wrong DB password | Edit `Backend/.env` (from `.env.example`) |
+| Custom query rejected | Only `SELECT`; no DDL/DML |
 
 ---
 
 ## Technologies
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18, Recharts, CSS (Glassmorphism) |
-| Backend | Node.js, Express, mysql2, CORS |
-| Database | MySQL 9.0 |
+| Layer | Stack |
+|-------|--------|
+| Frontend | React 18, Recharts |
+| Backend | Node.js, Express, mysql2, cors, dotenv |
+| Database | MySQL 8+ |
 | ETL | Python 3, pandas |
-| Schema | 9 tables in BCNF + 1 SQL VIEW |
 
 ---
 
 ## Authors
 
-Rojin Ziaei
-Mahsa Khoshnoodi
+Rojin Ziaei  
+Mahsa Khoshnoodi  
 Georgetown University
