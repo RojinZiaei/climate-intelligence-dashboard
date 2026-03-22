@@ -106,6 +106,17 @@ function sendQueryResponse(res, err, results, queryName, description, sourceMap,
   });
 }
 
+/*
+ * GET /api/source-legend
+ *
+ * Description: Returns one entry per logical data source (MySQL table or view name used in
+ * sourceMap): a short display label and hex color. Keys match schema.sql / air_pollution
+ * (country, indicator, mortality_normalized, who_air_quality, etc.).
+ *
+ * Objective: Give the frontend a single canonical palette so result pills, bar-chart series,
+ * and Custom SQL schema swatches stay visually consistent with whichever table supplied each
+ * column — without hard-coding colors in the React app.
+ */
 // Source legend — matches schema.sql tables + health_impacts VIEW
 app.get('/api/source-legend', (req, res) => {
   res.json({

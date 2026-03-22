@@ -105,7 +105,7 @@ countries.columns = ['country_code', 'region', 'income_group', 'special_notes', 
 countries = countries.dropna(subset=['country_code'])
 countries = countries[~countries['country_code'].isin(NON_COUNTRY_CODES)]
 countries = countries.drop_duplicates(subset=['country_code'])
-countries.to_csv(clean_path('country.csv'), index=False)
+countries.to_csv(clean_path('country.csv'), index=False, na_rep=r'\N')
 print(f"TABLE 1 — country:                    {len(countries)} rows")
 
 
@@ -152,7 +152,7 @@ if len(unmapped) > 0:
 # Rows without ISO3 cannot satisfy PK/FK in schema.sql
 city_aqi = city_aqi.dropna(subset=['country_code'])
 
-city_aqi.to_csv(clean_path('city_aqi.csv'), index=False)
+city_aqi.to_csv(clean_path('city_aqi.csv'), index=False, na_rep=r'\N')
 print(f"TABLE 4 — city_aqi:                   {len(city_aqi)} rows")
 
 
@@ -203,6 +203,7 @@ mortality_wide = mortality_raw[staging_cols].copy()
 mortality_wide.columns = ['country_code', 'indicator_code'] + year_cols
 mortality_wide = mortality_wide[~mortality_wide['country_code'].isin(NON_COUNTRY_CODES)]
 mortality_wide = mortality_wide.drop_duplicates(subset=['country_code', 'indicator_code'])
+# Empty year cells in CSV; schema.sql LOAD DATA uses NULLIF(@var,'') so MySQL stores NULL (not 0).
 mortality_wide.to_csv(clean_path('mortality_wide_raw.csv'), index=False)
 print(f"TABLE 7 — mortality_wide_raw:         {len(mortality_wide)} rows")
 
@@ -212,6 +213,10 @@ print(f"TABLE 7 — mortality_wide_raw:         {len(mortality_wide)} rows")
 # ============================================================
 who_aq = who_raw[['iso3', 'city', 'year', 'pm25_concentration', 'pm10_concentration', 'no2_concentration', 'latitude', 'longitude']].copy()
 who_aq.columns = ['country_code', 'city', 'year', 'pm25_concentration', 'pm10_concentration', 'no2_concentration', 'latitude', 'longitude']
+# WHO file includes country-level rows with no city; keep them for FK/PK with a fixed label (API excludes from "city" averages).
+_wc = who_aq['city']
+_nat = _wc.isna() | (_wc.astype(str).str.strip().isin(('', 'nan')))
+who_aq.loc[_nat, 'city'] = '(national aggregate)'
 for col in ['pm25_concentration', 'pm10_concentration', 'no2_concentration']:
     who_aq[col] = pd.to_numeric(who_aq[col], errors='coerce')
 who_aq['year'] = pd.to_numeric(who_aq['year'], errors='coerce')
@@ -219,7 +224,7 @@ who_aq = who_aq.dropna(subset=['country_code', 'city', 'year'])
 who_aq = who_aq.drop_duplicates()
 who_aq['year'] = who_aq['year'].astype('Int64')
 who_aq = who_aq.reset_index(drop=True)
-who_aq.to_csv(clean_path('who_air_quality.csv'), index=False)
+who_aq.to_csv(clean_path('who_air_quality.csv'), index=False, na_rep=r'\N')
 print(f"TABLE 8 — who_air_quality:            {len(who_aq)} rows")
 
 
@@ -244,7 +249,7 @@ pm25_long['year'] = pm25_long['year'].astype(int)
 pm25_long['indicator_code'] = 'EN.ATM.PM25.MC.M3'
 pm25_long = pm25_long[['country_code', 'country_name', 'year', 'pm25_exposure_ugm3', 'indicator_code']]
 pm25_long = pm25_long.sort_values(['country_code', 'year']).reset_index(drop=True)
-pm25_long.to_csv(clean_path('pm25_exposure_normalized.csv'), index=False)
+pm25_long.to_csv(clean_path('pm25_exposure_normalized.csv'), index=False, na_rep=r'\N')
 print(f"TABLE 9 — pm25_exposure_normalized:   {len(pm25_long)} rows, {pm25_long['country_code'].nunique()} countries")
 
 
@@ -299,7 +304,7 @@ out_cols = [
 ]
 cah = cah[out_cols].drop_duplicates(subset=['country_code', 'city', 'obs_date'])
 cah = cah.sort_values(['country_code', 'city', 'obs_date']).reset_index(drop=True)
-cah.to_csv(clean_path('city_air_health_daily.csv'), index=False)
+cah.to_csv(clean_path('city_air_health_daily.csv'), index=False, na_rep=r'\N')
 print(f"TABLE 11 — city_air_health_daily:       {len(cah)} rows")
 
 

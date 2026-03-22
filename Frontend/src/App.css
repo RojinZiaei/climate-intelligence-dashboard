@@ -267,6 +267,43 @@ button {
   color: #4a5d78;
 }
 
+.schema-ref-pk,
+.schema-ref-columns {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #334155;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+}
+
+.schema-ref-label {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.schema-ref-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #1e3a5f;
+  background: rgba(241, 245, 249, 0.9);
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+}
+
+.schema-ref-code--wrap {
+  white-space: normal;
+  word-break: break-word;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
 .query-button {
   width: 100%;
   border: 1px solid rgba(181, 202, 235, 0.65);

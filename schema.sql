@@ -266,11 +266,23 @@ CREATE TABLE mortality_wide_raw (
     FOREIGN KEY (indicator_code) REFERENCES indicator(indicator_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Map file fields to user vars, then SET year columns with NULLIF so blank CSV cells become SQL NULL (not DECIMAL 0).
 LOAD DATA LOCAL INFILE 'clean_data/mortality_wide_raw.csv'
 INTO TABLE mortality_wide_raw
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
-IGNORE 1 ROWS;
+IGNORE 1 ROWS
+(@cc, @ic, @y1960, @y1961, @y1962, @y1963, @y1964, @y1965, @y1966, @y1967, @y1968, @y1969, @y1970, @y1971, @y1972, @y1973, @y1974, @y1975, @y1976, @y1977, @y1978, @y1979, @y1980, @y1981, @y1982, @y1983, @y1984, @y1985, @y1986, @y1987, @y1988, @y1989, @y1990, @y1991, @y1992, @y1993, @y1994, @y1995, @y1996, @y1997, @y1998, @y1999, @y2000, @y2001, @y2002, @y2003, @y2004, @y2005, @y2006, @y2007, @y2008, @y2009, @y2010, @y2011, @y2012, @y2013, @y2014, @y2015, @y2016, @y2017, @y2018, @y2019, @y2020, @y2021, @y2022, @y2023, @y2024, @y2025)
+SET
+  country_code = @cc,
+  indicator_code = @ic,
+  `1960` = NULLIF(@y1960, ''), `1961` = NULLIF(@y1961, ''), `1962` = NULLIF(@y1962, ''), `1963` = NULLIF(@y1963, ''), `1964` = NULLIF(@y1964, ''), `1965` = NULLIF(@y1965, ''), `1966` = NULLIF(@y1966, ''), `1967` = NULLIF(@y1967, ''), `1968` = NULLIF(@y1968, ''), `1969` = NULLIF(@y1969, ''),
+  `1970` = NULLIF(@y1970, ''), `1971` = NULLIF(@y1971, ''), `1972` = NULLIF(@y1972, ''), `1973` = NULLIF(@y1973, ''), `1974` = NULLIF(@y1974, ''), `1975` = NULLIF(@y1975, ''), `1976` = NULLIF(@y1976, ''), `1977` = NULLIF(@y1977, ''), `1978` = NULLIF(@y1978, ''), `1979` = NULLIF(@y1979, ''),
+  `1980` = NULLIF(@y1980, ''), `1981` = NULLIF(@y1981, ''), `1982` = NULLIF(@y1982, ''), `1983` = NULLIF(@y1983, ''), `1984` = NULLIF(@y1984, ''), `1985` = NULLIF(@y1985, ''), `1986` = NULLIF(@y1986, ''), `1987` = NULLIF(@y1987, ''), `1988` = NULLIF(@y1988, ''), `1989` = NULLIF(@y1989, ''),
+  `1990` = NULLIF(@y1990, ''), `1991` = NULLIF(@y1991, ''), `1992` = NULLIF(@y1992, ''), `1993` = NULLIF(@y1993, ''), `1994` = NULLIF(@y1994, ''), `1995` = NULLIF(@y1995, ''), `1996` = NULLIF(@y1996, ''), `1997` = NULLIF(@y1997, ''), `1998` = NULLIF(@y1998, ''), `1999` = NULLIF(@y1999, ''),
+  `2000` = NULLIF(@y2000, ''), `2001` = NULLIF(@y2001, ''), `2002` = NULLIF(@y2002, ''), `2003` = NULLIF(@y2003, ''), `2004` = NULLIF(@y2004, ''), `2005` = NULLIF(@y2005, ''), `2006` = NULLIF(@y2006, ''), `2007` = NULLIF(@y2007, ''), `2008` = NULLIF(@y2008, ''), `2009` = NULLIF(@y2009, ''),
+  `2010` = NULLIF(@y2010, ''), `2011` = NULLIF(@y2011, ''), `2012` = NULLIF(@y2012, ''), `2013` = NULLIF(@y2013, ''), `2014` = NULLIF(@y2014, ''), `2015` = NULLIF(@y2015, ''), `2016` = NULLIF(@y2016, ''), `2017` = NULLIF(@y2017, ''), `2018` = NULLIF(@y2018, ''), `2019` = NULLIF(@y2019, ''),
+  `2020` = NULLIF(@y2020, ''), `2021` = NULLIF(@y2021, ''), `2022` = NULLIF(@y2022, ''), `2023` = NULLIF(@y2023, ''), `2024` = NULLIF(@y2024, ''), `2025` = NULLIF(@y2025, '');
 
 -- ============================================================
 -- VIEW: health_impacts (mortality + OECD DALY)

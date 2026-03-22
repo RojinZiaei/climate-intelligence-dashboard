@@ -87,87 +87,125 @@ function ChartBarTooltip({ active, payload, label, chart }) {
   );
 }
 
+/** Y-axis that includes 0 when all values are positive (bars start from baseline 0); still spans negatives for e.g. YoY change. */
+function barChartYDomain(rows, barDefs) {
+  if (!rows?.length || !barDefs?.length) return undefined;
+  const keys = barDefs.map((b) => b.key);
+  let min = Infinity;
+  let max = -Infinity;
+  for (const row of rows) {
+    for (const k of keys) {
+      const v = Number(row[k]);
+      if (Number.isFinite(v)) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 'auto'];
+  const lo = Math.min(0, min);
+  const hi = Math.max(0, max);
+  if (lo === hi) return [0, 'auto'];
+  return [lo, hi];
+}
+
 /** For Custom SQL — matches air_pollution schema (see schema.sql). */
 const SCHEMA_TABLE_REFERENCE = [
   {
     key: 'country',
     name: 'country',
     kind: 'TABLE',
-    desc: 'country_code (PK), region, income_group, table_name — join almost everything on country_code.'
+    desc: 'Country dimension (World Bank metadata). Join almost everything on country_code.',
+    pk: 'country_code',
+    columns: 'country_code, region, income_group, special_notes, table_name'
   },
   {
     key: 'indicator',
     name: 'indicator',
     kind: 'TABLE',
-    desc: 'indicator_code (PK), indicator_name, source_organization (WB / OECD / PM2.5 series).'
+    desc: 'Indicator codes and labels (WB mortality, WB PM2.5 exposure, OECD DALY, etc.).',
+    pk: 'indicator_code',
+    columns: 'indicator_code, indicator_name, source_organization'
   },
   {
     key: 'aqi_reference',
     name: 'aqi_reference',
     kind: 'TABLE',
-    desc: 'category_name (PK), min_value, max_value — range JOINs for AQI buckets.'
-  },
-  {
-    key: 'city_aqi',
-    name: 'city_aqi',
-    kind: 'TABLE',
-    desc: 'country_code, city, lat, lng, aqi_value & pollutant AQIs — no country name column; use JOIN country.'
-  },
-  {
-    key: 'mortality_normalized',
-    name: 'mortality_normalized',
-    kind: 'TABLE',
-    desc: '(country_code, indicator_code, year) PK, impact_value — WB SH.STA.AIRP.P5 mortality by year.'
-  },
-  {
-    key: 'oecd_normalized',
-    name: 'oecd_normalized',
-    kind: 'TABLE',
-    desc: '(country_code, year) PK, obs_value — OECD PM2.5 DALYs.'
-  },
-  {
-    key: 'who_air_quality',
-    name: 'who_air_quality',
-    kind: 'TABLE',
-    desc: 'city/station PM2.5, PM10, NO2 (µg/m³) + lat/lon — join country on country_code.'
-  },
-  {
-    key: 'pm25_exposure_normalized',
-    name: 'pm25_exposure_normalized',
-    kind: 'TABLE',
-    desc: '(country_code, year, indicator_code) PK, pm25_exposure_ugm3 — WB EN.ATM.PM25.MC.M3 national mean.'
+    desc: 'AQI category numeric ranges for bucket joins.',
+    pk: 'category_name',
+    columns: 'category_name, min_value, max_value'
   },
   {
     key: 'population_density_category',
     name: 'population_density_category',
     kind: 'TABLE',
-    desc: 'density_category (PK) — Urban / Suburban / Rural; FK from city_air_health_daily.'
+    desc: 'Lookup: Urban / Suburban / Rural — FK target for city_air_health_daily.',
+    pk: 'density_category',
+    columns: 'density_category'
+  },
+  {
+    key: 'city_aqi',
+    name: 'city_aqi',
+    kind: 'TABLE',
+    desc: 'City AQI snapshot; no country name column — JOIN country for labels.',
+    pk: '(country_code, city, lat, lng)',
+    columns: 'country_code, city, aqi_value, co_aqi_value, ozone_aqi_value, no2_aqi_value, pm25_aqi_value, lat, lng'
+  },
+  {
+    key: 'mortality_normalized',
+    name: 'mortality_normalized',
+    kind: 'TABLE',
+    desc: 'WB air-pollution mortality (SH.STA.AIRP.P5), long format by year.',
+    pk: '(country_code, indicator_code, year)',
+    columns: 'country_code, indicator_code, year, impact_value'
+  },
+  {
+    key: 'oecd_normalized',
+    name: 'oecd_normalized',
+    kind: 'TABLE',
+    desc: 'OECD PM2.5 outdoor DALYs per country-year.',
+    pk: '(country_code, year)',
+    columns: 'country_code, year, obs_value'
+  },
+  {
+    key: 'who_air_quality',
+    name: 'who_air_quality',
+    kind: 'TABLE',
+    desc: 'WHO ambient concentrations (µg/m³); city may be (national aggregate) for country-level rows.',
+    pk: '(country_code, city, year, latitude, longitude)',
+    columns: 'country_code, city, year, pm25_concentration, pm10_concentration, no2_concentration, latitude, longitude'
+  },
+  {
+    key: 'pm25_exposure_normalized',
+    name: 'pm25_exposure_normalized',
+    kind: 'TABLE',
+    desc: 'WB national mean PM2.5 exposure (EN.ATM.PM25.MC.M3), long by year.',
+    pk: '(country_code, year, indicator_code)',
+    columns: 'country_code, year, indicator_code, pm25_exposure_ugm3'
   },
   {
     key: 'city_air_health_daily',
     name: 'city_air_health_daily',
     kind: 'TABLE',
-    desc: '(country_code, city, obs_date) PK — daily metrics + density_category (FK). STORED generated: cal_year, cal_ym (indexed for monthly GROUP BY).'
-  },
-  {
-    key: 'mortality_wide_raw',
-    name: 'mortality_wide_raw',
-    kind: 'TABLE',
-    desc: 'Wide year columns (staging); prefer mortality_normalized for analytics.'
+    desc: 'Daily synthetic panel: air + hospital proxies; cal_year and cal_ym are STORED generated columns.',
+    pk: '(country_code, city, obs_date)',
+    columns: 'country_code, city, obs_date, cal_year, cal_ym, aqi, pm2_5, pm10, no2, o3, temperature, humidity, hospital_admissions, hospital_capacity, density_category'
   },
   {
     key: 'health_impacts',
     name: 'health_impacts',
     kind: 'VIEW',
-    desc: 'UNION of mortality + OECD as DALY_PM25 — columns: country_code, indicator_code, year, impact_value.'
+    desc: 'UNION ALL: mortality_normalized plus oecd_normalized rows with indicator_code DALY_PM25.',
+    pk: '— (view; no PK)',
+    columns: 'country_code, indicator_code, year, impact_value'
   }
 ];
 
 function App() {
   const [catalog, setCatalog] = useState([]);
   const [legendMap, setLegendMap] = useState({});
-  // Matches first item in /api/query-catalog (complex queries listed first)
-  const [selectedEndpoint, setSelectedEndpoint] = useState('/api/multi-source-pm25-health-2019');
+  // Default matches first item in /api/query-catalog (OECD DALY 2018→2019)
+  const [selectedEndpoint, setSelectedEndpoint] = useState('/api/oecd-daly-yoy-2018-2019');
   const [queryResult, setQueryResult] = useState(null);
   const [loading, setLoading] = useState(false);
   /** Catalog / legend fetch failed (do not clear when running a canned query) */
@@ -621,6 +659,18 @@ function App() {
                             </span>
                           </div>
                           <p className="schema-ref-desc">{row.desc}</p>
+                          {'pk' in row && row.pk ? (
+                            <p className="schema-ref-pk">
+                              <span className="schema-ref-label">PK</span>
+                              <code className="schema-ref-code">{row.pk}</code>
+                            </p>
+                          ) : null}
+                          {'columns' in row && row.columns ? (
+                            <p className="schema-ref-columns">
+                              <span className="schema-ref-label">Columns</span>
+                              <span className="schema-ref-code schema-ref-code--wrap">{row.columns}</span>
+                            </p>
+                          ) : null}
                         </div>
                       </li>
                     ))}
@@ -850,7 +900,9 @@ function App() {
                                   height={88}
                                   tick={{ fontSize: 12 }}
                                 />
-                                <YAxis />
+                                <YAxis
+                                  domain={barChartYDomain(chart.data ?? queryResult.data, chart.bars)}
+                                />
                                 <Tooltip
                                   wrapperStyle={{ outline: 'none' }}
                                   cursor={{ fill: 'rgba(99, 102, 241, 0.07)' }}
