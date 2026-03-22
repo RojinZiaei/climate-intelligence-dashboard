@@ -147,7 +147,7 @@ const SCHEMA_TABLE_REFERENCE = [
     key: 'city_air_health_daily',
     name: 'city_air_health_daily',
     kind: 'TABLE',
-    desc: '(country_code, city, obs_date) PK — daily AQI, pm2_5, pm10, no2, o3, weather, hospital_admissions, hospital_capacity, density_category (FK).'
+    desc: '(country_code, city, obs_date) PK — daily metrics + density_category (FK). STORED generated: cal_year, cal_ym (indexed for monthly GROUP BY).'
   },
   {
     key: 'mortality_wide_raw',
@@ -174,7 +174,6 @@ function App() {
   const [bootstrapError, setBootstrapError] = useState('');
   /** Canned query failed */
   const [queryError, setQueryError] = useState('');
-  const [typedInsight, setTypedInsight] = useState('');
 
   // Custom query state
   const [customMode, setCustomMode] = useState(false);
@@ -251,32 +250,10 @@ function App() {
       });
   }, [selectedEndpoint]);
 
-  // 3. Handle Typing Effect for Insights
+  // 3. Catalog row for selected canned query (objective text, etc.)
   const selectedQueryMeta = useMemo(() => {
     return catalog.find((query) => query.endpoint === selectedEndpoint);
   }, [catalog, selectedEndpoint]);
-
-  useEffect(() => {
-    if (!selectedQueryMeta?.description) {
-      setTypedInsight('');
-      return;
-    }
-
-    let i = 0;
-    const text = selectedQueryMeta.description;
-    setTypedInsight('');
-
-    const interval = setInterval(() => {
-      i += 1;
-      setTypedInsight(text.slice(0, i));
-
-      if (i >= text.length) {
-        clearInterval(interval);
-      }
-    }, 18);
-
-    return () => clearInterval(interval);
-  }, [selectedQueryMeta]);
 
   const resultColumnKeys = useMemo(
     () => (queryResult?.data?.[0] ? Object.keys(queryResult.data[0]) : []),
@@ -825,7 +802,7 @@ function App() {
                     {selectedQueryMeta?.description && (
                       <section className="insight-box">
                         <h3>Query Objective</h3>
-                        <p className="typing-cursor">{typedInsight}</p>
+                        <p>{selectedQueryMeta?.description}</p>
                       </section>
                     )}
                   </section>

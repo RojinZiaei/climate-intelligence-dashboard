@@ -131,14 +131,14 @@ app.get('/api/query-catalog', (req, res) => {
       id: 'multi-source-pm25-health-2019',
       title: 'Multi-Source PM2.5 & Health (2019)',
       endpoint: '/api/multi-source-pm25-health-2019',
-      description: 'Complex analysis for 2019: joins World Bank EN national PM2.5 (API_EN file), WB SH air-pollution mortality, OECD PM2.5 DALYs, and WHO city PM2.5 averages (subquery). Only countries present in all four fact paths; compares modeled national exposure to ground-measured WHO PM2.5 and burden metrics.',
+      description: 'For 2019, line up national PM2.5, WHO city PM2.5, air-pollution mortality, and OECD burden—only where all four exist.',
       tables: ['country', 'pm25_exposure_normalized', 'mortality_normalized', 'oecd_normalized', 'who_air_quality']
     },
     {
       id: 'daily-air-health-worst-months-vs-wb-pm25',
       title: 'Daily Air–Health: Worst PM2.5 Months vs National WB (CTEs + windows)',
       endpoint: '/api/daily-air-health-worst-months-vs-wb-pm25',
-      description: 'From city_air_health_daily: monthly averages per city, ROW_NUMBER to flag the two highest-PM2.5 months each year, 3-month trailing mean (window frame), GROUP_CONCAT of density_category values seen that month, LEFT JOIN pm25_exposure_normalized for same calendar year national EN.ATM.PM25.MC.M3. Requires MySQL 8+. Results cached ~90s; add ?refresh=1 to bypass.',
+      description: 'Show each city’s worst PM2.5 months next to national WB exposure for the same year (daily panel → monthly).',
       tables: ['city_air_health_daily', 'country', 'pm25_exposure_normalized']
     },
     {
@@ -642,7 +642,7 @@ app.get('/api/multi-source-pm25-health-2019', (req, res) => {
   };
   db.query(sql, (err, results) => sendQueryResponse(res, err, results,
     'Multi-Source PM2.5 & Health (2019)',
-    'National WB PM2.5 (EN) vs WHO city PM2.5 vs mortality (SH) vs OECD DALY — countries with all sources.',
+    'For 2019, line up national PM2.5, WHO city PM2.5, air-pollution mortality, and OECD burden—only where all four exist.',
     sourceMap,
     ['country', 'pm25_exposure_normalized', 'mortality_normalized', 'oecd_normalized', 'who_air_quality']));
 });
@@ -669,8 +669,8 @@ app.get('/api/daily-air-health-worst-months-vs-wb-pm25', (req, res) => {
              h.city,
              c.region,
              c.income_group,
-             EXTRACT(YEAR FROM h.obs_date) AS cal_year,
-             DATE_FORMAT(h.obs_date, '%Y-%m') AS cal_ym,
+             h.cal_year,
+             h.cal_ym,
              ROUND(AVG(h.pm2_5), 2) AS avg_pm25_ugm3,
              ROUND(AVG(h.aqi), 1) AS avg_aqi,
              SUM(h.hospital_admissions) AS admissions_sum,
@@ -680,7 +680,7 @@ app.get('/api/daily-air-health-worst-months-vs-wb-pm25', (req, res) => {
       INNER JOIN country c ON c.country_code = h.country_code
       WHERE c.region IS NOT NULL
       GROUP BY c.table_name, h.country_code, h.city, c.region, c.income_group,
-               EXTRACT(YEAR FROM h.obs_date), DATE_FORMAT(h.obs_date, '%Y-%m')
+               h.cal_year, h.cal_ym
     ),
     ranked AS (
       SELECT m.*,
@@ -734,14 +734,14 @@ app.get('/api/daily-air-health-worst-months-vs-wb-pm25', (req, res) => {
     if (err) {
       return sendQueryResponse(res, err, results,
         'Daily Air–Health: Worst PM2.5 Months vs National WB',
-        'Monthly rollups from city_air_health_daily with window ranks/rolling average, density labels, and WB national PM2.5 for the same year.',
+        'Show each city’s worst PM2.5 months next to national WB exposure for the same year (daily panel → monthly).',
         sourceMap,
         ['city_air_health_daily', 'country', 'pm25_exposure_normalized']);
     }
     const payload = {
       queryName: 'Daily Air–Health: Worst PM2.5 Months vs National WB',
       description:
-        'Monthly rollups from city_air_health_daily with window ranks/rolling average, density labels, and WB national PM2.5 for the same year.',
+        'Show each city’s worst PM2.5 months next to national WB exposure for the same year (daily panel → monthly).',
       rowCount: results.length,
       sourceMap,
       tablesUsed: ['city_air_health_daily', 'country', 'pm25_exposure_normalized'],

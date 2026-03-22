@@ -206,6 +206,8 @@ CREATE TABLE city_air_health_daily (
     country_code         VARCHAR(10)   NOT NULL,
     city                 VARCHAR(150)  NOT NULL,
     obs_date             DATE          NOT NULL,
+    cal_year             INT           GENERATED ALWAYS AS (YEAR(obs_date)) STORED,
+    cal_ym               CHAR(7)       GENERATED ALWAYS AS (DATE_FORMAT(obs_date, '%Y-%m')) STORED,
     aqi                  INT,
     pm2_5                DECIMAL(10,2),
     pm10                 DECIMAL(10,2),
@@ -294,3 +296,5 @@ CREATE INDEX idx_city_aqi_country ON city_aqi(country_code);
 CREATE INDEX idx_city_air_health_country_date ON city_air_health_daily(country_code, obs_date);
 -- Speeds canned monthly rollups partitioned by city + ordered by month (see Backend daily-air-health query)
 CREATE INDEX idx_city_air_health_city_date ON city_air_health_daily(city(80), obs_date);
+-- Aligns with GROUP BY country + city + calendar month (generated cols) for monthly aggregates
+CREATE INDEX idx_cah_country_city_cal ON city_air_health_daily(country_code, city(80), cal_year, cal_ym);
