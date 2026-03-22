@@ -1,13 +1,25 @@
 -- ============================================================
--- Climate Intelligence Dashboard — 9-Table BCNF Schema
+-- AirLense — BCNF Schema
+-- Load order: dimension tables first, then facts.
+-- Run from project root: mysql -u USER -p --local-infile < schema.sql
+-- ============================================================
+-- NF1: Atomic values only (no repeating groups in core tables)
+-- NF2: No partial dependencies (non-keys depend on whole PK)
+-- NF3: No transitive dependencies (redundant columns omitted in loads)
+-- BCNF: Every determinant is a candidate key
 -- ============================================================
 
 DROP DATABASE IF EXISTS air_pollution;
-CREATE DATABASE air_pollution;
+CREATE DATABASE air_pollution
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 USE air_pollution;
 
+SET NAMES utf8mb4;
+
 -- ============================================================
--- 1. country
+-- 1. country (BCNF)
+-- PK: country_code
 -- ============================================================
 CREATE TABLE country (
     country_code   VARCHAR(10)  PRIMARY KEY,
@@ -15,9 +27,9 @@ CREATE TABLE country (
     income_group   VARCHAR(50),
     special_notes  TEXT,
     table_name     VARCHAR(100)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'country.csv'
+LOAD DATA LOCAL INFILE 'clean_data/country.csv'
 INTO TABLE country
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
@@ -25,15 +37,16 @@ IGNORE 1 ROWS
 (country_code, region, income_group, special_notes, table_name);
 
 -- ============================================================
--- 2. indicator
+-- 2. indicator (BCNF)
+-- PK: indicator_code
 -- ============================================================
 CREATE TABLE indicator (
     indicator_code      VARCHAR(30) PRIMARY KEY,
-    indicator_name      VARCHAR(200),
+    indicator_name      VARCHAR(500),
     source_organization VARCHAR(200)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'indicator.csv'
+LOAD DATA LOCAL INFILE 'clean_data/indicator.csv'
 INTO TABLE indicator
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
@@ -41,15 +54,16 @@ IGNORE 1 ROWS
 (indicator_code, indicator_name, source_organization);
 
 -- ============================================================
--- 3. aqi_reference
+-- 3. aqi_reference (BCNF)
+-- PK: category_name
 -- ============================================================
 CREATE TABLE aqi_reference (
     category_name  VARCHAR(50) PRIMARY KEY,
     min_value      INT,
     max_value      INT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'aqi_reference.csv'
+LOAD DATA LOCAL INFILE 'clean_data/aqi_reference.csv'
 INTO TABLE aqi_reference
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
@@ -57,42 +71,61 @@ IGNORE 1 ROWS
 (category_name, min_value, max_value);
 
 -- ============================================================
--- 4. city_aqi  (all 5 pollutant columns)
+-- 3b. population_density_category (BCNF)
+-- PK: density_category — lookup for city_air_health_daily
+-- ============================================================
+CREATE TABLE population_density_category (
+    density_category VARCHAR(20) PRIMARY KEY
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+LOAD DATA LOCAL INFILE 'clean_data/population_density_category.csv'
+INTO TABLE population_density_category
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(density_category);
+
+-- ============================================================
+-- 4. city_aqi (BCNF)
+-- PK: (country_code, city, lat, lng)
+-- CSV "country" column skipped (derive via country.table_name)
 -- ============================================================
 CREATE TABLE city_aqi (
-    country         VARCHAR(100),
-    city            VARCHAR(150),
-    aqi_value       INT,
-    co_aqi_value    INT,
-    ozone_aqi_value INT,
-    no2_aqi_value   INT,
-    pm25_aqi_value  INT,
-    lat             DECIMAL(10,4),
-    lng             DECIMAL(10,4),
-    PRIMARY KEY (country, city, lat, lng)
-);
+    country_code     VARCHAR(10)   NOT NULL,
+    city             VARCHAR(150)  NOT NULL,
+    aqi_value        INT,
+    co_aqi_value     INT,
+    ozone_aqi_value  INT,
+    no2_aqi_value    INT,
+    pm25_aqi_value   INT,
+    lat              DECIMAL(10,4) NOT NULL,
+    lng              DECIMAL(10,4) NOT NULL,
+    PRIMARY KEY (country_code, city, lat, lng),
+    FOREIGN KEY (country_code) REFERENCES country(country_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'city_aqi.csv'
+LOAD DATA LOCAL INFILE 'clean_data/city_aqi.csv'
 INTO TABLE city_aqi
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 ROWS
-(country, city, aqi_value, co_aqi_value, ozone_aqi_value, no2_aqi_value, pm25_aqi_value, lat, lng);
+(country_code, @dummy_country, city, aqi_value, co_aqi_value, ozone_aqi_value, no2_aqi_value, pm25_aqi_value, lat, lng);
 
 -- ============================================================
--- 5. mortality_normalized  (World Bank mortality, unpivoted)
+-- 5. mortality_normalized (BCNF)
+-- PK: (country_code, indicator_code, year)
 -- ============================================================
 CREATE TABLE mortality_normalized (
-    country_code   VARCHAR(10),
-    indicator_code VARCHAR(30),
-    year           INT,
+    country_code   VARCHAR(10)  NOT NULL,
+    indicator_code VARCHAR(30)  NOT NULL,
+    year           INT          NOT NULL,
     impact_value   DECIMAL(20,6),
     PRIMARY KEY (country_code, indicator_code, year),
     FOREIGN KEY (country_code)   REFERENCES country(country_code),
     FOREIGN KEY (indicator_code) REFERENCES indicator(indicator_code)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'mortality_normalized.csv'
+LOAD DATA LOCAL INFILE 'clean_data/mortality_normalized.csv'
 INTO TABLE mortality_normalized
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
@@ -100,28 +133,112 @@ IGNORE 1 ROWS
 (country_code, indicator_code, year, impact_value);
 
 -- ============================================================
--- 6. oecd_normalized  (OECD DALYs, native column names)
+-- 6. oecd_normalized (BCNF)
+-- PK: (country_code, year)
 -- ============================================================
 CREATE TABLE oecd_normalized (
-    ref_area    VARCHAR(10),
-    time_period INT,
-    obs_value   DECIMAL(20,6),
-    PRIMARY KEY (ref_area, time_period)
-);
+    country_code VARCHAR(10)  NOT NULL,
+    year         INT          NOT NULL,
+    obs_value    DECIMAL(20,6),
+    PRIMARY KEY (country_code, year),
+    FOREIGN KEY (country_code) REFERENCES country(country_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'oecd_normalized.csv'
+LOAD DATA LOCAL INFILE 'clean_data/oecd_normalized.csv'
 INTO TABLE oecd_normalized
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 ROWS
-(ref_area, time_period, obs_value);
+(country_code, year, obs_value);
 
 -- ============================================================
--- 7. mortality_wide_raw  (staging — wide format)
+-- 7. who_air_quality (BCNF)
+-- PK: (country_code, city, year, latitude, longitude)
+-- ============================================================
+CREATE TABLE who_air_quality (
+    country_code       VARCHAR(10)   NOT NULL,
+    city               VARCHAR(200)  NOT NULL,
+    year               INT           NOT NULL,
+    pm25_concentration DECIMAL(10,2),
+    pm10_concentration DECIMAL(10,2),
+    no2_concentration  DECIMAL(10,2),
+    latitude           DECIMAL(10,6) NOT NULL,
+    longitude          DECIMAL(10,6) NOT NULL,
+    PRIMARY KEY (country_code, city(100), year, latitude, longitude),
+    FOREIGN KEY (country_code) REFERENCES country(country_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+LOAD DATA LOCAL INFILE 'clean_data/who_air_quality.csv'
+INTO TABLE who_air_quality
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(country_code, city, year, pm25_concentration, pm10_concentration, no2_concentration, latitude, longitude);
+
+-- ============================================================
+-- 8. pm25_exposure_normalized (BCNF)
+-- PK: (country_code, year, indicator_code)
+-- CSV "country_name" skipped (derive via country)
+-- ============================================================
+CREATE TABLE pm25_exposure_normalized (
+    country_code       VARCHAR(10)  NOT NULL,
+    year               INT          NOT NULL,
+    indicator_code     VARCHAR(30)  NOT NULL,
+    pm25_exposure_ugm3 DECIMAL(20,6),
+    PRIMARY KEY (country_code, year, indicator_code),
+    FOREIGN KEY (country_code)   REFERENCES country(country_code),
+    FOREIGN KEY (indicator_code) REFERENCES indicator(indicator_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+LOAD DATA LOCAL INFILE 'clean_data/pm25_exposure_normalized.csv'
+INTO TABLE pm25_exposure_normalized
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(country_code, @dummy_country_name, year, pm25_exposure_ugm3, indicator_code);
+
+-- ============================================================
+-- 8b. city_air_health_daily (BCNF)
+-- PK: (country_code, city, obs_date) — daily air + health proxy measures
+-- Source: data/air_quality_health_dataset.csv
+-- ============================================================
+CREATE TABLE city_air_health_daily (
+    country_code         VARCHAR(10)   NOT NULL,
+    city                 VARCHAR(150)  NOT NULL,
+    obs_date             DATE          NOT NULL,
+    cal_year             INT           GENERATED ALWAYS AS (YEAR(obs_date)) STORED,
+    cal_ym               CHAR(7)       GENERATED ALWAYS AS (DATE_FORMAT(obs_date, '%Y-%m')) STORED,
+    aqi                  INT,
+    pm2_5                DECIMAL(10,2),
+    pm10                 DECIMAL(10,2),
+    no2                  DECIMAL(10,2),
+    o3                   DECIMAL(10,2),
+    temperature          DECIMAL(8,2),
+    humidity             INT,
+    hospital_admissions  INT,
+    hospital_capacity    INT,
+    density_category     VARCHAR(20)   NOT NULL,
+    PRIMARY KEY (country_code, city(100), obs_date),
+    FOREIGN KEY (country_code)     REFERENCES country(country_code),
+    FOREIGN KEY (density_category) REFERENCES population_density_category(density_category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+LOAD DATA LOCAL INFILE 'clean_data/city_air_health_daily.csv'
+INTO TABLE city_air_health_daily
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(country_code, city, obs_date, aqi, pm2_5, pm10, no2, o3,
+ temperature, humidity, hospital_admissions, hospital_capacity, density_category);
+
+-- ============================================================
+-- 9. mortality_wide_raw (STAGING — NOT 1NF)
+-- Wide year columns; for exports/legacy tools only.
+-- Prefer mortality_normalized for analytics.
 -- ============================================================
 CREATE TABLE mortality_wide_raw (
-    country_code   VARCHAR(10),
-    indicator_code VARCHAR(30),
+    country_code   VARCHAR(10)  NOT NULL,
+    indicator_code VARCHAR(30)  NOT NULL,
     `1960` DECIMAL(20,6), `1961` DECIMAL(20,6), `1962` DECIMAL(20,6),
     `1963` DECIMAL(20,6), `1964` DECIMAL(20,6), `1965` DECIMAL(20,6),
     `1966` DECIMAL(20,6), `1967` DECIMAL(20,6), `1968` DECIMAL(20,6),
@@ -144,49 +261,52 @@ CREATE TABLE mortality_wide_raw (
     `2017` DECIMAL(20,6), `2018` DECIMAL(20,6), `2019` DECIMAL(20,6),
     `2020` DECIMAL(20,6), `2021` DECIMAL(20,6), `2022` DECIMAL(20,6),
     `2023` DECIMAL(20,6), `2024` DECIMAL(20,6), `2025` DECIMAL(20,6),
-    PRIMARY KEY (country_code, indicator_code)
-);
+    PRIMARY KEY (country_code, indicator_code),
+    FOREIGN KEY (country_code)   REFERENCES country(country_code),
+    FOREIGN KEY (indicator_code) REFERENCES indicator(indicator_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-LOAD DATA LOCAL INFILE 'mortality_wide_raw.csv'
+-- Map file fields to user vars, then SET year columns with NULLIF so blank CSV cells become SQL NULL (not DECIMAL 0).
+LOAD DATA LOCAL INFILE 'clean_data/mortality_wide_raw.csv'
 INTO TABLE mortality_wide_raw
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
-IGNORE 1 ROWS;
-
--- ============================================================
--- 8. who_air_quality  (WHO Ambient Air Quality Database)
---    BCNF: PK (country_code, city, year, latitude, longitude)
---    FD:   PK → pm25_concentration, pm10_concentration, no2_concentration
--- ============================================================
-CREATE TABLE who_air_quality (
-    country_code       VARCHAR(10),
-    city               VARCHAR(200),
-    year               INT,
-    pm25_concentration DECIMAL(10,2),
-    pm10_concentration DECIMAL(10,2),
-    no2_concentration  DECIMAL(10,2),
-    latitude           DECIMAL(10,6),
-    longitude          DECIMAL(10,6),
-    PRIMARY KEY (country_code, city(100), year, latitude, longitude)
-);
-
-LOAD DATA LOCAL INFILE 'who_air_quality.csv'
-INTO TABLE who_air_quality
-FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\n'
 IGNORE 1 ROWS
-(country_code, city, year, pm25_concentration, pm10_concentration, no2_concentration, latitude, longitude);
+(@cc, @ic, @y1960, @y1961, @y1962, @y1963, @y1964, @y1965, @y1966, @y1967, @y1968, @y1969, @y1970, @y1971, @y1972, @y1973, @y1974, @y1975, @y1976, @y1977, @y1978, @y1979, @y1980, @y1981, @y1982, @y1983, @y1984, @y1985, @y1986, @y1987, @y1988, @y1989, @y1990, @y1991, @y1992, @y1993, @y1994, @y1995, @y1996, @y1997, @y1998, @y1999, @y2000, @y2001, @y2002, @y2003, @y2004, @y2005, @y2006, @y2007, @y2008, @y2009, @y2010, @y2011, @y2012, @y2013, @y2014, @y2015, @y2016, @y2017, @y2018, @y2019, @y2020, @y2021, @y2022, @y2023, @y2024, @y2025)
+SET
+  country_code = @cc,
+  indicator_code = @ic,
+  `1960` = NULLIF(@y1960, ''), `1961` = NULLIF(@y1961, ''), `1962` = NULLIF(@y1962, ''), `1963` = NULLIF(@y1963, ''), `1964` = NULLIF(@y1964, ''), `1965` = NULLIF(@y1965, ''), `1966` = NULLIF(@y1966, ''), `1967` = NULLIF(@y1967, ''), `1968` = NULLIF(@y1968, ''), `1969` = NULLIF(@y1969, ''),
+  `1970` = NULLIF(@y1970, ''), `1971` = NULLIF(@y1971, ''), `1972` = NULLIF(@y1972, ''), `1973` = NULLIF(@y1973, ''), `1974` = NULLIF(@y1974, ''), `1975` = NULLIF(@y1975, ''), `1976` = NULLIF(@y1976, ''), `1977` = NULLIF(@y1977, ''), `1978` = NULLIF(@y1978, ''), `1979` = NULLIF(@y1979, ''),
+  `1980` = NULLIF(@y1980, ''), `1981` = NULLIF(@y1981, ''), `1982` = NULLIF(@y1982, ''), `1983` = NULLIF(@y1983, ''), `1984` = NULLIF(@y1984, ''), `1985` = NULLIF(@y1985, ''), `1986` = NULLIF(@y1986, ''), `1987` = NULLIF(@y1987, ''), `1988` = NULLIF(@y1988, ''), `1989` = NULLIF(@y1989, ''),
+  `1990` = NULLIF(@y1990, ''), `1991` = NULLIF(@y1991, ''), `1992` = NULLIF(@y1992, ''), `1993` = NULLIF(@y1993, ''), `1994` = NULLIF(@y1994, ''), `1995` = NULLIF(@y1995, ''), `1996` = NULLIF(@y1996, ''), `1997` = NULLIF(@y1997, ''), `1998` = NULLIF(@y1998, ''), `1999` = NULLIF(@y1999, ''),
+  `2000` = NULLIF(@y2000, ''), `2001` = NULLIF(@y2001, ''), `2002` = NULLIF(@y2002, ''), `2003` = NULLIF(@y2003, ''), `2004` = NULLIF(@y2004, ''), `2005` = NULLIF(@y2005, ''), `2006` = NULLIF(@y2006, ''), `2007` = NULLIF(@y2007, ''), `2008` = NULLIF(@y2008, ''), `2009` = NULLIF(@y2009, ''),
+  `2010` = NULLIF(@y2010, ''), `2011` = NULLIF(@y2011, ''), `2012` = NULLIF(@y2012, ''), `2013` = NULLIF(@y2013, ''), `2014` = NULLIF(@y2014, ''), `2015` = NULLIF(@y2015, ''), `2016` = NULLIF(@y2016, ''), `2017` = NULLIF(@y2017, ''), `2018` = NULLIF(@y2018, ''), `2019` = NULLIF(@y2019, ''),
+  `2020` = NULLIF(@y2020, ''), `2021` = NULLIF(@y2021, ''), `2022` = NULLIF(@y2022, ''), `2023` = NULLIF(@y2023, ''), `2024` = NULLIF(@y2024, ''), `2025` = NULLIF(@y2025, '');
 
 -- ============================================================
--- 9. health_impacts  (VIEW — unions the two source tables)
+-- VIEW: health_impacts (mortality + OECD DALY)
 -- ============================================================
 CREATE VIEW health_impacts AS
     SELECT country_code, indicator_code, year, impact_value
     FROM mortality_normalized
   UNION ALL
-    SELECT ref_area    AS country_code,
+    SELECT country_code,
            'DALY_PM25' AS indicator_code,
-           time_period AS year,
+           year,
            obs_value   AS impact_value
     FROM oecd_normalized;
 
+-- ============================================================
+-- Indexes
+-- ============================================================
+CREATE INDEX idx_mortality_country_year ON mortality_normalized(country_code, year);
+CREATE INDEX idx_oecd_country ON oecd_normalized(country_code);
+CREATE INDEX idx_who_country_year ON who_air_quality(country_code, year);
+CREATE INDEX idx_pm25_country_year ON pm25_exposure_normalized(country_code, year);
+CREATE INDEX idx_city_aqi_country ON city_aqi(country_code);
+CREATE INDEX idx_city_air_health_country_date ON city_air_health_daily(country_code, obs_date);
+-- Speeds canned monthly rollups partitioned by city + ordered by month (see Backend daily-air-health query)
+CREATE INDEX idx_city_air_health_city_date ON city_air_health_daily(city(80), obs_date);
+-- Aligns with GROUP BY country + city + calendar month (generated cols) for monthly aggregates
+CREATE INDEX idx_cah_country_city_cal ON city_air_health_daily(country_code, city(80), cal_year, cal_ym);

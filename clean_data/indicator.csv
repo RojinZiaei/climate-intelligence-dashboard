@@ -1,0 +1,4 @@
+indicator_code,indicator_name,source_organization
+SH.STA.AIRP.P5,"Mortality rate attributed to household and ambient air pollution, age-standardized (per 100,000 population)",World Health Organization (WHO) via World Bank
+DALY_PM25,"Disability-adjusted life years (DALYs) from PM2.5 outdoor exposure (per 1,000 inhabitants)",OECD Environment Statistics
+EN.ATM.PM25.MC.M3,"PM2.5 air pollution, mean annual exposure (micrograms per cubic meter)",Global Burden of Disease Study 2021 (IHME) via World Bank
