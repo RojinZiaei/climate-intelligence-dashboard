@@ -260,32 +260,6 @@ LIMIT 10;
 
 ---
 
-## Troubleshooting
-
-| Issue | What to try |
-|-------|-------------|
-| `ECONNREFUSED` / fetch failed / “Failed to fetch query results” | Start API: `cd Backend && npm start`. If the UI shows **`API 500: …`**, fix MySQL (`schema.sql` loaded, `Backend/.env` credentials). If backend uses another port, set `REACT_APP_API_ORIGIN` in `Frontend/.env` and restart `npm start`. |
-| Port clash | Backend `3000`, frontend `3001`; edit `Frontend/package.json` or `Frontend/src/App.js` (`API_BASE`) if you remap |
-| `Cannot find module` / wrong directory | Run `npm install` and `npm start` from **`Frontend/`**, not the repo root |
-| `ER_NO_SUCH_TABLE` | Run `schema.sql` after `transformData.py` |
-| Empty tables | Run `python3 transformData.py`, then reload SQL |
-| `local_infile` denied | `mysql --local-infile=1` or `SET GLOBAL local_infile = 1` |
-| Wrong DB password | Edit `Backend/.env` (from `.env.example`) |
-| Custom query rejected | Only `SELECT`; no DDL/DML |
-
----
-
-## Technologies
-
-| Layer | Stack |
-|-------|--------|
-| Frontend | React 18, Recharts |
-| Backend | Node.js, Express, mysql2, cors, dotenv |
-| Database | MySQL 8+ |
-| ETL | Python 3, pandas |
-
----
-
 ## Authors
 
 Rojin Ziaei  
